@@ -1,0 +1,41 @@
+{
+  "name": "ai-meeting-frontend",
+  "version": "1.0.0",
+  "description": "AI Meeting Intelligence Platform Frontend",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "next": "^14.0.0",
+    "typescript": "^5.2.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@types/node": "^20.0.0",
+    "axios": "^1.5.0",
+    "zustand": "^4.4.0",
+    "react-icons": "^4.11.0",
+    "clsx": "^2.0.0",
+    "date-fns": "^2.30.0",
+    "react-dropzone": "^14.2.0",
+    "wavesurfer.js": "^6.3.0",
+    "zustand-persist": "^2.1.0",
+    "@radix-ui/react-dialog": "^1.1.1",
+    "@radix-ui/react-slot": "^2.0.2",
+    "class-variance-authority": "^0.7.0",
+    "tailwind-merge": "^2.2.0"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.3.0",
+    "postcss": "^8.4.0",
+    "autoprefixer": "^10.4.0",
+    "eslint": "^8.50.0",
+    "eslint-config-next": "^14.0.0"
+  }
+}
