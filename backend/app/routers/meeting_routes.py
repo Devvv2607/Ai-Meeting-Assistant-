@@ -6,6 +6,7 @@ from fastapi import (
     UploadFile,
     File,
     Header,
+    Form,
 )
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -73,9 +74,9 @@ def get_current_user(
 
 @router.post("/upload", response_model=MeetingResponse)
 async def upload_meeting(
-    title: str,
+    title: str = Form(...),
     file: UploadFile = File(...),
-    description: Optional[str] = None,
+    description: Optional[str] = Form(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):

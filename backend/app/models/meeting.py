@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Float, ForeignKey, Enum
+from sqlalchemy import Column, Integer, String, DateTime, Float, ForeignKey
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.database import Base
@@ -25,7 +25,7 @@ class Meeting(Base):
     description = Column(String(1000), nullable=True)
     audio_url = Column(String(500), nullable=False)
     duration = Column(Float, nullable=True)  # Duration in seconds
-    status = Column(Enum(MeetingStatus), default=MeetingStatus.PENDING)
+    status = Column(String(20), default=MeetingStatus.PENDING.value)  # Use String instead of Enum
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     celery_task_id = Column(String(255), nullable=True)

@@ -12,9 +12,19 @@ class Settings(BaseSettings):
     DEBUG: bool = os.getenv("DEBUG", "False") == "True"
 
     # Database
-    DATABASE_URL: str = os.getenv(
-        "DATABASE_URL", "postgresql://user:password@localhost:5432/ai_meeting"
-    )
+    DB_USER: str = os.getenv("DB_USER", "DevM")
+    DB_PASSWORD: str = os.getenv("DB_PASSWORD", "pass@123")
+    DB_NAME: str = os.getenv("DB_NAME", "ai_meeting")
+    DB_HOST: str = os.getenv("DB_HOST", "localhost")
+    DB_PORT: str = os.getenv("DB_PORT", "5433")
+    
+    @property
+    def DATABASE_URL(self) -> str:
+        from urllib.parse import quote
+        # URL-encode the password to handle special characters like '@'
+        encoded_password = quote(self.DB_PASSWORD, safe='')
+        return f"postgresql://{self.DB_USER}:{encoded_password}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+    
     SQLALCHEMY_POOL_SIZE: int = 20
     SQLALCHEMY_MAX_OVERFLOW: int = 40
 
@@ -45,7 +55,7 @@ class Settings(BaseSettings):
     # Whisper Settings
     WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "base")
     CHUNK_DURATION: int = 300  # 5 minutes in seconds
-    DEVICE: str = os.getenv("DEVICE", "cuda")  # cuda or cpu
+    DEVICE: str = os.getenv("DEVICE", "cpu")  # cuda or cpu
 
     # LLM Settings
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")

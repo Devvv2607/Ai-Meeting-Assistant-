@@ -1,7 +1,7 @@
 from typing import List, Dict, Optional
 import json
 import logging
-from faster_whisper import WhisperModel
+import whisper
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ class WhisperService:
         """
         try:
             device = "cuda" if settings.DEVICE == "cuda" else "cpu"
-            self.model = WhisperModel(model_size, device=device, compute_type="float32")
+            self.model = whisper.load_model(model_size, device=device)
             logger.info(f"Loaded Whisper model: {model_size} on {device}")
         except Exception as e:
             logger.error(f"Error loading Whisper model: {e}")
@@ -39,23 +39,20 @@ class WhisperService:
             List of transcribed segments with timing
         """
         try:
-            segments, info = self.model.transcribe(
+            result = self.model.transcribe(
                 audio_path,
                 language=language,
-                beam_size=5,
-                best_of=5,
-                temperature=0.0,
             )
 
             results = []
-            for segment in segments:
+            for segment in result["segments"]:
                 results.append(
                     {
                         "speaker": "Speaker 1",  # Basic speaker label
-                        "text": segment.text.strip(),
-                        "start": segment.start,
-                        "end": segment.end,
-                        "confidence": segment.confidence,
+                        "text": segment["text"].strip(),
+                        "start": segment["start"],
+                        "end": segment["end"],
+                        "confidence": 1.0,
                     }
                 )
 

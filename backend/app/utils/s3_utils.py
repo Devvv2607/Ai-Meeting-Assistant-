@@ -1,5 +1,11 @@
-import boto3
-from botocore.exceptions import ClientError
+try:
+    import boto3
+    from botocore.exceptions import ClientError
+    BOTO3_AVAILABLE = True
+except ImportError:
+    BOTO3_AVAILABLE = False
+    ClientError = None
+
 from app.config import settings
 from typing import Optional
 import logging
@@ -11,6 +17,12 @@ class S3Service:
     """Service for AWS S3 operations"""
 
     def __init__(self):
+        if not BOTO3_AVAILABLE:
+            logger.warning("boto3 not available, S3 operations will not work")
+            self.client = None
+            self.bucket_name = settings.S3_BUCKET_NAME
+            return
+
         self.client = boto3.client(
             "s3",
             aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
@@ -24,6 +36,10 @@ class S3Service:
         self, file_path: str, object_name: Optional[str] = None
     ) -> Optional[str]:
         """Upload file to S3"""
+        if not BOTO3_AVAILABLE or not self.client:
+            logger.warning("S3 operations not available")
+            return None
+
         if object_name is None:
             object_name = file_path.split("/")[-1]
 
@@ -37,6 +53,10 @@ class S3Service:
 
     def download_file(self, object_name: str, file_path: str) -> bool:
         """Download file from S3"""
+        if not BOTO3_AVAILABLE or not self.client:
+            logger.warning("S3 operations not available")
+            return False
+
         try:
             self.client.download_file(self.bucket_name, object_name, file_path)
             logger.info(f"Downloaded {object_name} from S3 to {file_path}")
@@ -49,6 +69,10 @@ class S3Service:
         self, object_name: str, expiration: int = 3600
     ) -> Optional[str]:
         """Generate presigned URL for S3 object"""
+        if not BOTO3_AVAILABLE or not self.client:
+            logger.warning("S3 operations not available")
+            return None
+
         try:
             url = self.client.generate_presigned_url(
                 "get_object",
@@ -62,6 +86,10 @@ class S3Service:
 
     def delete_file(self, object_name: str) -> bool:
         """Delete file from S3"""
+        if not BOTO3_AVAILABLE or not self.client:
+            logger.warning("S3 operations not available")
+            return False
+
         try:
             self.client.delete_object(Bucket=self.bucket_name, Key=object_name)
             logger.info(f"Deleted {object_name} from S3")

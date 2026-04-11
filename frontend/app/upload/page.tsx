@@ -50,9 +50,20 @@ export default function UploadPage() {
         router.push(`/meeting/${response.data.id}`);
       }, 2000);
     } catch (err: any) {
-      setError(
-        err.response?.data?.detail || "Upload failed. Please try again."
-      );
+      let errorMessage = "Upload failed. Please try again.";
+      
+      if (err.response?.data?.detail) {
+        const detail = err.response.data.detail;
+        if (Array.isArray(detail)) {
+          errorMessage = detail.map((e: any) => e.msg || e).join(", ");
+        } else if (typeof detail === "string") {
+          errorMessage = detail;
+        } else if (detail.msg) {
+          errorMessage = detail.msg;
+        }
+      }
+      
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }

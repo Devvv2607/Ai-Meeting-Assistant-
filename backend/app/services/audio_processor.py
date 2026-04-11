@@ -3,7 +3,15 @@ import logging
 from app.utils.audio_utils import AudioProcessor
 from app.services.whisper_service import whisper_service
 from app.services.embedding_service import embedding_service
-from pyannote.audio import Pipeline
+
+# Optional imports for speaker diarization
+try:
+    from pyannote.audio import Pipeline
+    PYANNOTE_AVAILABLE = True
+except ImportError:
+    PYANNOTE_AVAILABLE = False
+    Pipeline = None
+
 import torch
 
 logger = logging.getLogger(__name__)
@@ -15,16 +23,21 @@ class AudioProcessingService:
     def __init__(self):
         """Initialize audio processing service"""
         self.audio_processor = AudioProcessor()
-        try:
-            # Load pyannote speaker diarization model
-            # Note: Requires authentication token
-            self.diarization_pipeline = Pipeline.from_pretrained(
-                "pyannote/speaker-diarization-3.0",
-                use_auth_token=False,  # Set to your token if available
-            )
-        except Exception as e:
-            logger.warning(f"Speaker diarization model not available: {e}")
-            self.diarization_pipeline = None
+        self.diarization_pipeline = None
+        
+        if PYANNOTE_AVAILABLE:
+            try:
+                # Load pyannote speaker diarization model
+                # Note: Requires authentication token
+                self.diarization_pipeline = Pipeline.from_pretrained(
+                    "pyannote/speaker-diarization-3.0",
+                    use_auth_token=False,  # Set to your token if available
+                )
+            except Exception as e:
+                logger.warning(f"Speaker diarization model not available: {e}")
+                self.diarization_pipeline = None
+        else:
+            logger.warning("Pyannote not installed. Speaker diarization disabled.")
 
     def process_meeting(
         self,

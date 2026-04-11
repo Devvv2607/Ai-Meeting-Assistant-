@@ -9,6 +9,7 @@ class APIClient {
     this.client = axios.create({
       baseURL: API_URL,
       headers: {
+        // Don't set Content-Type here - let axios/FormData handle it for files
         "Content-Type": "application/json",
       },
     });
@@ -19,6 +20,12 @@ class APIClient {
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
       }
+      
+      // Don't set Content-Type for FormData - let axios handle it
+      if (config.data instanceof FormData) {
+        delete config.headers["Content-Type"];
+      }
+      
       return config;
     });
 
@@ -68,11 +75,7 @@ class APIClient {
       formData.append("description", description);
     }
 
-    return this.client.post("/api/v1/meetings/upload", formData, {
-      headers: {
-        "Content-Type": "multipart/form-data",
-      },
-    });
+    return this.client.post("/api/v1/meetings/upload", formData);
   }
 
   async getMeetings(skip: number = 0, limit: number = 20) {

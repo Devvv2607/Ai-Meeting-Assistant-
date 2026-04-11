@@ -13,7 +13,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Create database tables
-Base.metadata.create_all(bind=engine)
+try:
+    Base.metadata.create_all(bind=engine)
+    logger.info("Database tables created/verified successfully")
+except Exception as e:
+    logger.warning(f"Could not create tables automatically: {str(e)}")
+    logger.info("Tables may already exist or you may need admin privileges")
 
 # Initialize FastAPI app
 app = FastAPI(

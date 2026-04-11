@@ -4,21 +4,41 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from app.config import settings
 import logging
+import hashlib
+import bcrypt
 
 logger = logging.getLogger(__name__)
 
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Password hashing - disable max_password_size validation since we pre-hash with SHA256
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
+
+
+def _hash_password_sha256(password: str) -> str:
+    """Hash password with SHA256 first to handle bcrypt's 72-byte limit"""
+    return hashlib.sha256(password.encode()).hexdigest()
 
 
 def hash_password(password: str) -> str:
-    """Hash password"""
-    return pwd_context.hash(password)
+    """Hash password using SHA256 + bcrypt"""
+    # First hash with SHA256 to ensure we don't exceed bcrypt's 72-byte limit
+    # SHA256 always produces 64-byte hex string, well under bcrypt's 72-byte limit
+    sha_hash = _hash_password_sha256(password)
+    
+    # Use bcrypt directly with 12 rounds for better security control
+    salt = bcrypt.gensalt(rounds=12)
+    hashed = bcrypt.hashpw(sha_hash.encode(), salt)
+    return hashed.decode()
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify password"""
-    return pwd_context.verify(plain_password, hashed_password)
+    """Verify password using SHA256 + bcrypt"""
+    try:
+        # Hash the plain password with SHA256 first, then verify with bcrypt
+        sha_hash = _hash_password_sha256(plain_password)
+        return bcrypt.checkpw(sha_hash.encode(), hashed_password.encode())
+    except Exception as e:
+        logger.error(f"Password verification error: {str(e)}")
+        return False
 
 
 def create_access_token(

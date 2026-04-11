@@ -31,9 +31,25 @@ export default function RegisterPage() {
       // Redirect to login
       router.push("/login");
     } catch (err: any) {
-      setError(
-        err.response?.data?.detail || "Registration failed. Please try again."
-      );
+      let errorMessage = "Registration failed. Please try again.";
+      
+      if (err.response?.data?.detail) {
+        const detail = err.response.data.detail;
+        // Handle array of validation errors
+        if (Array.isArray(detail)) {
+          errorMessage = detail.map((e: any) => e.msg || e).join(", ");
+        } 
+        // Handle string error messages
+        else if (typeof detail === "string") {
+          errorMessage = detail;
+        }
+        // Handle object with msg property
+        else if (detail.msg) {
+          errorMessage = detail.msg;
+        }
+      }
+      
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }

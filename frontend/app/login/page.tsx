@@ -27,9 +27,20 @@ export default function LoginPage() {
       // Redirect to dashboard
       router.push("/dashboard");
     } catch (err: any) {
-      setError(
-        err.response?.data?.detail || "Login failed. Please try again."
-      );
+      let errorMessage = "Login failed. Please try again.";
+      
+      if (err.response?.data?.detail) {
+        const detail = err.response.data.detail;
+        if (Array.isArray(detail)) {
+          errorMessage = detail.map((e: any) => e.msg || e).join(", ");
+        } else if (typeof detail === "string") {
+          errorMessage = detail;
+        } else if (detail.msg) {
+          errorMessage = detail.msg;
+        }
+      }
+      
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }

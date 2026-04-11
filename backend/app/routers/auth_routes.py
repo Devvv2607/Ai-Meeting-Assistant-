@@ -28,29 +28,40 @@ async def register(user: UserCreate, db: Session = Depends(get_db)):
     Returns:
         Created user
     """
-    # Check if user already exists
-    existing_user = db.query(User).filter(User.email == user.email).first()
-    if existing_user:
-        logger.warning(f"Registration attempt with existing email: {user.email}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered",
+    try:
+        # Check if user already exists
+        existing_user = db.query(User).filter(User.email == user.email).first()
+        if existing_user:
+            logger.warning(f"Registration attempt with existing email: {user.email}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered",
+            )
+
+        # Create new user
+        hashed_password = hash_password(user.password)
+        db_user = User(
+            email=user.email,
+            password_hash=hashed_password,
+            full_name=user.full_name,
         )
 
-    # Create new user
-    hashed_password = hash_password(user.password)
-    db_user = User(
-        email=user.email,
-        password_hash=hashed_password,
-        full_name=user.full_name,
-    )
+        db.add(db_user)
+        db.commit()
+        db.refresh(db_user)
 
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
-
-    logger.info(f"New user registered: {user.email}")
-    return db_user
+        logger.info(f"New user registered: {user.email}")
+        return db_user
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Registration error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Registration failed: {str(e)}",
+        )
 
 
 @router.post("/login", response_model=TokenResponse)
