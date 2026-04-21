@@ -118,8 +118,8 @@ Statistics:
 DB_HOST=localhost
 DB_PORT=5433
 DB_NAME=ai_meeting
-DB_USER=DevM
-DB_PASSWORD=pass@123
+DB_USER=your_db_user
+DB_PASSWORD=your_db_password
 
 # Groq API
 GROQ_API_KEY=your_groq_api_key_here
@@ -130,7 +130,7 @@ LLM_PROVIDER=groq
 NEXT_PUBLIC_API_URL=http://localhost:8000
 
 # JWT
-SECRET_KEY=d5b0c5e86547bc101717bcfda6a1d371fe16a8ae5bd9f0a754e43612ddd4fa4b
+SECRET_KEY=your-secret-key-here
 ```
 
 ## Virtual Environment

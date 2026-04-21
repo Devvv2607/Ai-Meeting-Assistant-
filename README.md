@@ -111,8 +111,8 @@ createdb ai_meeting
 
 ```env
 # Database
-DB_USER=DevM
-DB_PASSWORD=pass@123
+DB_USER=your_db_user
+DB_PASSWORD=your_db_password
 DB_NAME=ai_meeting
 DB_HOST=localhost
 DB_PORT=5433
