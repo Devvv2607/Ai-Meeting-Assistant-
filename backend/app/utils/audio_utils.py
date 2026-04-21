@@ -1,22 +1,26 @@
-import librosa
-import numpy as np
-from typing import List, Tuple, Optional
-import soundfile as sf
+# Temporary stub to avoid ML dependencies
+# import librosa
+# import numpy as np
+# import soundfile as sf
+from typing import List, Optional
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
 
 class AudioProcessor:
-    """Service for audio processing"""
+    """Service for audio processing (stub version without ML dependencies)"""
 
     @staticmethod
     def get_duration(file_path: str) -> Optional[float]:
-        """Get audio duration in seconds"""
+        """Get audio duration in seconds (stub - estimates from file size)"""
         try:
-            y, sr = librosa.load(file_path, sr=None)
-            duration = librosa.get_duration(y=y, sr=sr)
-            return duration
+            # Rough estimate: 1MB ≈ 60 seconds for typical audio
+            file_size = os.path.getsize(file_path)
+            estimated_duration = (file_size / 1024 / 1024) * 60
+            logger.info(f"Estimated audio duration: {estimated_duration:.2f}s (file size: {file_size} bytes)")
+            return estimated_duration
         except Exception as e:
             logger.error(f"Error getting audio duration: {e}")
             return None
@@ -25,7 +29,7 @@ class AudioProcessor:
     def split_audio(
         file_path: str, chunk_duration: int = 300, output_dir: str = "/tmp"
     ) -> List[str]:
-        """Split audio into chunks of specified duration
+        """Split audio into chunks (stub - not implemented)
 
         Args:
             file_path: Path to audio file
@@ -33,58 +37,30 @@ class AudioProcessor:
             output_dir: Directory to save chunks
 
         Returns:
-            List of paths to audio chunks
+            Empty list (stub implementation)
         """
-        try:
-            y, sr = librosa.load(file_path, sr=None)
-            chunk_samples = chunk_duration * sr
-
-            chunks = []
-            for i in range(0, len(y), chunk_samples):
-                chunk = y[i : i + chunk_samples]
-                chunk_path = f"{output_dir}/chunk_{i // chunk_samples}.wav"
-                sf.write(chunk_path, chunk, sr)
-                chunks.append(chunk_path)
-
-            logger.info(f"Split audio into {len(chunks)} chunks")
-            return chunks
-        except Exception as e:
-            logger.error(f"Error splitting audio: {e}")
-            return []
+        logger.warning("Audio splitting not available without librosa")
+        return []
 
     @staticmethod
     def merge_audio(chunk_paths: List[str], output_path: str) -> bool:
-        """Merge audio chunks into single file
+        """Merge audio chunks (stub - not implemented)
 
         Args:
             chunk_paths: List of paths to audio chunks
             output_path: Path to save merged audio
 
         Returns:
-            True if successful, False otherwise
+            False (stub implementation)
         """
-        try:
-            audio_data = []
-            sr = None
-
-            for chunk_path in chunk_paths:
-                y, sr = librosa.load(chunk_path, sr=sr)
-                audio_data.append(y)
-
-            merged = np.concatenate(audio_data)
-            sf.write(output_path, merged, sr)
-
-            logger.info(f"Merged audio saved to {output_path}")
-            return True
-        except Exception as e:
-            logger.error(f"Error merging audio: {e}")
-            return False
+        logger.warning("Audio merging not available without librosa")
+        return False
 
     @staticmethod
     def convert_format(
         input_path: str, output_path: str, target_sr: int = 16000
     ) -> bool:
-        """Convert audio to target format and sample rate
+        """Convert audio format (stub - not implemented)
 
         Args:
             input_path: Path to input audio file
@@ -92,13 +68,7 @@ class AudioProcessor:
             target_sr: Target sample rate
 
         Returns:
-            True if successful, False otherwise
+            False (stub implementation)
         """
-        try:
-            y, sr = librosa.load(input_path, sr=target_sr)
-            sf.write(output_path, y, target_sr)
-            logger.info(f"Converted audio saved to {output_path}")
-            return True
-        except Exception as e:
-            logger.error(f"Error converting audio: {e}")
-            return False
+        logger.warning("Audio conversion not available without librosa")
+        return False

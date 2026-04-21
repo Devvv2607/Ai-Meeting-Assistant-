@@ -101,7 +101,7 @@ class APIClient {
 
   // Transcript endpoints
   async getTranscript(meetingId: number) {
-    return this.client.get(`/api/v1/meetings/${meetingId}/transcript`);
+    return this.client.get(`/api/v1/meetings/${meetingId}/transcripts`);
   }
 
   async getSummary(meetingId: number) {

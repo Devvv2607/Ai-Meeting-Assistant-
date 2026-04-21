@@ -64,8 +64,9 @@ export default function MeetingDetailPage() {
       try {
         const summaryRes = await api.getSummary(meetingId);
         setSummary(summaryRes.data);
-      } catch {
-        // Summary might not be ready yet
+      } catch (err: any) {
+        // Summary might not be ready yet or needs to be generated
+        console.log("Summary not available yet, will generate on demand");
       }
     } catch (err: any) {
       if (err.response?.status === 401) {
@@ -75,6 +76,16 @@ export default function MeetingDetailPage() {
       }
     } finally {
       setIsLoadingMeeting(false);
+    }
+  };
+
+  const generateSummary = async () => {
+    try {
+      const summaryRes = await api.getSummary(meetingId);
+      setSummary(summaryRes.data);
+    } catch (err: any) {
+      console.error("Failed to generate summary:", err);
+      setError("Failed to generate summary");
     }
   };
 
@@ -230,6 +241,7 @@ export default function MeetingDetailPage() {
                 actionItems={summary?.action_items}
                 sentiment={summary?.sentiment}
                 isLoading={meeting.status === "processing"}
+                onGenerateSummary={generateSummary}
               />
             )}
           </div>

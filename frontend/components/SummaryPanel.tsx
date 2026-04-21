@@ -20,6 +20,7 @@ interface SummaryPanelProps {
   actionItems?: ActionItem[];
   sentiment?: string;
   isLoading?: boolean;
+  onGenerateSummary?: () => void;
 }
 
 export const SummaryPanel: React.FC<SummaryPanelProps> = ({
@@ -28,6 +29,7 @@ export const SummaryPanel: React.FC<SummaryPanelProps> = ({
   actionItems = [],
   sentiment,
   isLoading = false,
+  onGenerateSummary,
 }) => {
   const getSentimentColor = (sentimentValue?: string) => {
     switch (sentimentValue?.toLowerCase()) {
@@ -137,7 +139,15 @@ export const SummaryPanel: React.FC<SummaryPanelProps> = ({
 
       {!summary && keyPoints.length === 0 && actionItems.length === 0 && (
         <div className="text-center text-gray-500 py-8">
-          No summary available yet
+          <p className="mb-4">No summary available yet</p>
+          {onGenerateSummary && (
+            <button
+              onClick={onGenerateSummary}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Generate Summary with AI
+            </button>
+          )}
         </div>
       )}
     </div>

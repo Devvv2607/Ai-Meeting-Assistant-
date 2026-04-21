@@ -4,6 +4,7 @@ sqlalchemy
 psycopg2-binary
 pydantic
 pydantic-settings
+pydantic[email]
 python-jose
 passlib[bcrypt]
 python-multipart
@@ -24,3 +25,4 @@ httpx
 
 python-dotenv
 google-generativeai
+groq

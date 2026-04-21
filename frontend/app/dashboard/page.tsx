@@ -94,14 +94,45 @@ export default function DashboardPage() {
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Upload Button */}
-        <div className="mb-8">
+        {/* Navigation Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
           <Link
             href="/upload"
-            className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+            className="bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-lg p-6 hover:shadow-lg transition-shadow"
           >
-            <FiPlus className="w-5 h-5" />
-            Upload New Meeting
+            <div className="flex items-center gap-3">
+              <FiPlus className="w-6 h-6" />
+              <div>
+                <h3 className="font-semibold">Upload Meeting</h3>
+                <p className="text-sm opacity-90">Add new audio file</p>
+              </div>
+            </div>
+          </Link>
+          
+          <Link
+            href="/summary"
+            className="bg-gradient-to-br from-indigo-500 to-indigo-600 text-white rounded-lg p-6 hover:shadow-lg transition-shadow"
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">📊</span>
+              <div>
+                <h3 className="font-semibold">Summary</h3>
+                <p className="text-sm opacity-90">View statistics</p>
+              </div>
+            </div>
+          </Link>
+          
+          <Link
+            href="/insights"
+            className="bg-gradient-to-br from-purple-500 to-pink-600 text-white rounded-lg p-6 hover:shadow-lg transition-shadow"
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">💡</span>
+              <div>
+                <h3 className="font-semibold">Insights</h3>
+                <p className="text-sm opacity-90">Technical details</p>
+              </div>
+            </div>
           </Link>
         </div>
 
