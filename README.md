@@ -21,6 +21,18 @@ A full-stack application for transcribing, analyzing, and summarizing meeting re
 - Action items identification
 - Sentiment analysis
 
+✅ **PDF Export & Multilingual Support**
+- Download transcripts as professional PDF files
+- Translate transcripts to 12 languages (Spanish, French, German, Italian, Portuguese, Russian, Chinese, Japanese, Korean, Arabic, Hindi)
+- Real-time translation with language selector
+
+✅ **Meeting Q&A Chatbot**
+- Ask questions about meeting content
+- AI-powered answers using Groq LLM
+- Document upload support (PDF, DOCX, TXT)
+- Chat history persistence
+- Source attribution for answers
+
 ✅ **System Insights**
 - Real-time system status monitoring
 - Performance metrics and statistics
@@ -185,6 +197,22 @@ GET    /api/v1/meetings/{id}/transcripts - Get transcripts
 GET    /api/v1/meetings/{id}/search      - Search transcripts
 ```
 
+#### PDF Export & Translation
+```
+GET    /api/v1/meetings/{id}/transcript/pdf      - Download PDF
+POST   /api/v1/meetings/{id}/transcript/translate - Translate transcript
+GET    /api/v1/languages                         - Get supported languages
+```
+
+#### Chatbot & Documents
+```
+POST   /api/v1/meetings/{id}/chat                    - Ask question
+GET    /api/v1/meetings/{id}/chat/history           - Get chat history
+POST   /api/v1/meetings/{id}/documents              - Upload document
+GET    /api/v1/meetings/{id}/documents              - List documents
+DELETE /api/v1/meetings/{id}/documents/{doc_id}     - Delete document
+```
+
 #### System
 ```
 GET    /api/v1/insights           - Get system insights
@@ -346,11 +374,14 @@ For issues or questions:
 
 ## Roadmap
 
+- [x] PDF Export functionality
+- [x] Multilingual translation support
+- [x] Meeting Q&A Chatbot
+- [x] Document upload and processing
 - [ ] Real-time transcription updates
 - [ ] Advanced search and filtering
 - [ ] Meeting templates
 - [ ] Custom summary prompts
-- [ ] Export to PDF/Word
 - [ ] Email notifications
 - [ ] Team collaboration
 - [ ] Mobile app
@@ -361,5 +392,5 @@ For issues or questions:
 
 ---
 
-**Last Updated**: April 21, 2026
-**Version**: 1.0.0
+**Last Updated**: April 24, 2026
+**Version**: 2.0.0
