@@ -6,7 +6,8 @@ import { api } from "@/services/api";
 import TranscriptViewer from "@/components/TranscriptViewer";
 import SummaryPanel from "@/components/SummaryPanel";
 import SearchBar from "@/components/SearchBar";
-import { FiArrowLeft, FiLoader } from "react-icons/fi";
+import MeetingChatbot from "@/components/MeetingChatbot";
+import { FiArrowLeft, FiLoader, FiDownload, FiGlobe } from "react-icons/fi";
 import Link from "next/link";
 
 interface Meeting {
@@ -41,9 +42,12 @@ export default function MeetingDetailPage() {
   const [transcript, setTranscript] = useState<Transcript[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [isLoadingMeeting, setIsLoadingMeeting] = useState(true);
-  const [isLoadingTranscript, setIsLoadingTranscript] = useState(false);
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState<"transcript" | "summary">("transcript");
+  const [selectedLanguage, setSelectedLanguage] = useState("en");
+  const [translatedTranscript, setTranslatedTranscript] = useState<Transcript[]>([]);
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [isDownloadingPDF, setIsDownloadingPDF] = useState(false);
 
   useEffect(() => {
     loadMeetingData();
@@ -96,6 +100,49 @@ export default function MeetingDetailPage() {
     } catch (err) {
       console.error("Search failed:", err);
       return [];
+    }
+  };
+
+  const handleDownloadPDF = async () => {
+    try {
+      setIsDownloadingPDF(true);
+      const response = await api.downloadTranscriptPDF(meetingId);
+      
+      // Create blob and download
+      const blob = new Blob([response.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${meeting?.title || 'transcript'}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      console.error("Failed to download PDF:", err);
+      setError("Failed to download PDF");
+    } finally {
+      setIsDownloadingPDF(false);
+    }
+  };
+
+  const handleTranslate = async (language: string) => {
+    if (language === "en") {
+      setTranslatedTranscript([]);
+      setSelectedLanguage(language);
+      return;
+    }
+
+    try {
+      setIsTranslating(true);
+      const response = await api.translateTranscript(meetingId, language);
+      setTranslatedTranscript(response.data.segments || []);
+      setSelectedLanguage(language);
+    } catch (err: any) {
+      console.error("Failed to translate:", err);
+      setError("Failed to translate transcript");
+    } finally {
+      setIsTranslating(false);
     }
   };
 
@@ -202,6 +249,44 @@ export default function MeetingDetailPage() {
           <SearchBar onSearch={handleSearch} />
         </div>
 
+        {/* Action Buttons */}
+        <div className="mb-6 flex gap-4 flex-wrap">
+          {/* PDF Download Button */}
+          <button
+            onClick={handleDownloadPDF}
+            disabled={isDownloadingPDF}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+          >
+            <FiDownload className="w-5 h-5" />
+            {isDownloadingPDF ? "Downloading..." : "Download PDF"}
+          </button>
+
+          {/* Language Selector */}
+          <div className="flex items-center gap-2">
+            <FiGlobe className="w-5 h-5 text-gray-600" />
+            <select
+              value={selectedLanguage}
+              onChange={(e) => handleTranslate(e.target.value)}
+              disabled={isTranslating}
+              className="px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 hover:border-gray-400 disabled:bg-gray-100 disabled:cursor-not-allowed transition-colors"
+            >
+              <option value="en">English</option>
+              <option value="es">Spanish</option>
+              <option value="fr">French</option>
+              <option value="de">German</option>
+              <option value="it">Italian</option>
+              <option value="pt">Portuguese</option>
+              <option value="ru">Russian</option>
+              <option value="zh">Chinese</option>
+              <option value="ja">Japanese</option>
+              <option value="ko">Korean</option>
+              <option value="ar">Arabic</option>
+              <option value="hi">Hindi</option>
+            </select>
+            {isTranslating && <FiLoader className="w-5 h-5 text-blue-600 animate-spin" />}
+          </div>
+        </div>
+
         {/* Tabs */}
         <div className="mb-6 border-b border-gray-200">
           <div className="flex gap-8">
@@ -232,17 +317,21 @@ export default function MeetingDetailPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">
             {activeTab === "transcript" && (
-              <TranscriptViewer segments={transcript} />
+              <TranscriptViewer segments={translatedTranscript.length > 0 ? translatedTranscript : transcript} />
             )}
             {activeTab === "summary" && (
-              <SummaryPanel
-                summary={summary?.summary}
-                keyPoints={summary?.key_points}
-                actionItems={summary?.action_items}
-                sentiment={summary?.sentiment}
-                isLoading={meeting.status === "processing"}
-                onGenerateSummary={generateSummary}
-              />
+              <div className="space-y-6">
+                <SummaryPanel
+                  summary={summary?.summary}
+                  keyPoints={summary?.key_points}
+                  actionItems={summary?.action_items}
+                  sentiment={summary?.sentiment}
+                  isLoading={meeting.status === "processing"}
+                  onGenerateSummary={generateSummary}
+                />
+                <MeetingChatbot meetingId={meetingId} />
+              </div>
+            )}
             )}
           </div>
 

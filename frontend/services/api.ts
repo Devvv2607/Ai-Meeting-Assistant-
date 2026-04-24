@@ -117,6 +117,48 @@ class APIClient {
       params: { q: query, top_k: topK },
     });
   }
+
+  // Export endpoints
+  async downloadTranscriptPDF(meetingId: number) {
+    return this.client.get(`/api/v1/meetings/${meetingId}/transcript/pdf`, {
+      responseType: 'arraybuffer',
+    });
+  }
+
+  async translateTranscript(meetingId: number, targetLanguage: string) {
+    return this.client.post(`/api/v1/meetings/${meetingId}/transcript/translate`, {
+      target_language: targetLanguage,
+    });
+  }
+
+  async getSupportedLanguages() {
+    return this.client.get("/api/v1/languages");
+  }
+
+  // Chatbot endpoints
+  async askQuestion(meetingId: number, question: string) {
+    return this.client.post(`/api/v1/meetings/${meetingId}/chat`, {
+      question,
+    });
+  }
+
+  async getChatHistory(meetingId: number) {
+    return this.client.get(`/api/v1/meetings/${meetingId}/chat/history`);
+  }
+
+  async uploadDocument(meetingId: number, file: File) {
+    const formData = new FormData();
+    formData.append("file", file);
+    return this.client.post(`/api/v1/meetings/${meetingId}/documents`, formData);
+  }
+
+  async getDocuments(meetingId: number) {
+    return this.client.get(`/api/v1/meetings/${meetingId}/documents`);
+  }
+
+  async deleteDocument(meetingId: number, documentId: number) {
+    return this.client.delete(`/api/v1/meetings/${meetingId}/documents/${documentId}`);
+  }
 }
 
 export const api = new APIClient();

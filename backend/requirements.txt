@@ -26,3 +26,12 @@ httpx
 python-dotenv
 google-generativeai
 groq
+pydub
+
+# Phase 1: PDF Export & Multilingual
+reportlab
+google-cloud-translate
+PyPDF2
+
+# Phase 2: Document Processing & Chatbot
+python-docx

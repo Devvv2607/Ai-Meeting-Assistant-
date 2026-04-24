@@ -81,7 +81,7 @@ class WhisperService:
             return self._transcribe_gemini(audio_path)
     
     def _transcribe_groq(self, audio_path: str) -> List[Dict]:
-        """Transcribe using Groq API"""
+        """Transcribe using Groq API with chunking for large files"""
         if not self.groq_client:
             logger.error("Groq client not initialized")
             return self._get_fallback_transcript(audio_path)
@@ -95,7 +95,18 @@ class WhisperService:
                 logger.error(f"Audio file not found: {audio_path}")
                 return self._get_fallback_transcript(audio_path)
             
-            # Read audio file
+            # Get file size
+            file_size = PathlibPath(audio_path).stat().st_size
+            logger.info(f"Audio file size: {file_size / (1024*1024):.2f} MB")
+            
+            # Groq has a 25MB limit for audio files
+            MAX_FILE_SIZE = 25 * 1024 * 1024  # 25MB
+            
+            if file_size > MAX_FILE_SIZE:
+                logger.info(f"File size ({file_size / (1024*1024):.2f} MB) exceeds Groq limit (25MB), splitting into chunks")
+                return self._transcribe_groq_chunked(audio_path)
+            
+            # File is small enough, transcribe directly
             with open(audio_path, "rb") as audio_file:
                 transcript = self.groq_client.audio.transcriptions.create(
                     file=(Path(audio_path).name, audio_file, "audio/mpeg"),
@@ -113,7 +124,7 @@ class WhisperService:
             audio_processor = AudioProcessor()
             duration = audio_processor.get_duration(audio_path)
             
-            logger.info(f"Transcription successful: {len(text)} characters")
+            logger.info(f"✓ Transcription successful: {len(text)} characters")
             
             return [{
                 "speaker": "Speaker 1",
@@ -124,6 +135,171 @@ class WhisperService:
             
         except Exception as e:
             logger.error(f"Error transcribing audio with Groq: {e}", exc_info=True)
+            return self._get_fallback_transcript(audio_path)
+    
+    def _transcribe_groq_chunked(self, audio_path: str) -> List[Dict]:
+        """Transcribe large audio files by splitting into chunks using ffmpeg"""
+        try:
+            import subprocess
+            import os
+            import tempfile
+            from pathlib import Path as PathlibPath
+            
+            logger.info(f"Starting chunked transcription for {audio_path}")
+            
+            # Create temp directory for chunks
+            temp_dir = tempfile.mkdtemp()
+            chunk_prefix = os.path.join(temp_dir, "chunk")
+            
+            try:
+                # Use ffmpeg to split audio into 10-minute chunks
+                logger.info("Splitting audio into 10-minute chunks using ffmpeg")
+                
+                cmd = [
+                    "ffmpeg",
+                    "-i", audio_path,
+                    "-f", "segment",
+                    "-segment_time", "600",  # 10 minutes
+                    "-c", "copy",
+                    "-y",
+                    f"{chunk_prefix}_%03d.m4a"
+                ]
+                
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                
+                if result.returncode != 0:
+                    logger.warning(f"ffmpeg split failed: {result.stderr}")
+                    logger.info("Falling back to compression method")
+                    return self._transcribe_groq_compressed(audio_path)
+                
+                # Find all chunk files
+                chunk_files = sorted([f for f in os.listdir(temp_dir) if f.startswith("chunk_")])
+                logger.info(f"✓ Created {len(chunk_files)} audio chunks")
+                
+                # Transcribe each chunk
+                all_transcripts = []
+                for i, chunk_file in enumerate(chunk_files):
+                    chunk_path = os.path.join(temp_dir, chunk_file)
+                    logger.info(f"Transcribing chunk {i+1}/{len(chunk_files)}: {chunk_file}")
+                    
+                    try:
+                        with open(chunk_path, "rb") as audio_file:
+                            transcript = self.groq_client.audio.transcriptions.create(
+                                file=(chunk_file, audio_file, "audio/mpeg"),
+                                model="whisper-large-v3-turbo",
+                                language="en",
+                            )
+                        
+                        text = transcript.text if hasattr(transcript, 'text') else str(transcript)
+                        all_transcripts.append(text)
+                        logger.info(f"✓ Chunk {i+1} transcribed: {len(text)} characters")
+                        
+                    except Exception as chunk_error:
+                        logger.error(f"Error transcribing chunk {i+1}: {chunk_error}")
+                        all_transcripts.append(f"[Chunk {i+1} transcription failed]")
+                
+                # Combine all transcripts
+                combined_text = " ".join(all_transcripts)
+                
+                # Get total duration
+                from app.utils.audio_utils import AudioProcessor
+                audio_processor = AudioProcessor()
+                duration = audio_processor.get_duration(audio_path)
+                
+                logger.info(f"✓ Chunked transcription complete: {len(combined_text)} characters total")
+                
+                return [{
+                    "speaker": "Speaker 1",
+                    "text": combined_text,
+                    "start_time": 0.0,
+                    "end_time": float(duration) if duration else 60.0
+                }]
+                
+            finally:
+                # Clean up temp directory
+                import shutil
+                try:
+                    shutil.rmtree(temp_dir)
+                    logger.info(f"Cleaned up temp directory: {temp_dir}")
+                except Exception as cleanup_error:
+                    logger.warning(f"Failed to clean up temp directory: {cleanup_error}")
+                    
+        except Exception as e:
+            logger.error(f"Error in chunked transcription: {e}", exc_info=True)
+            return self._transcribe_groq_compressed(audio_path)
+    
+    def _transcribe_groq_compressed(self, audio_path: str) -> List[Dict]:
+        """Transcribe by compressing the audio file using ffmpeg"""
+        try:
+            import subprocess
+            import tempfile
+            from pathlib import Path as PathlibPath
+            
+            logger.info(f"Attempting transcription with audio compression using ffmpeg")
+            
+            # Create temp file for compressed audio
+            temp_file = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
+            compressed_path = temp_file.name
+            temp_file.close()
+            
+            try:
+                # Compress audio using ffmpeg (reduce bitrate to 64kbps)
+                logger.info("Compressing audio to 64kbps using ffmpeg")
+                
+                cmd = [
+                    "ffmpeg",
+                    "-i", audio_path,
+                    "-b:a", "64k",  # 64kbps bitrate
+                    "-y",
+                    compressed_path
+                ]
+                
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                
+                if result.returncode != 0:
+                    logger.warning(f"Audio compression failed: {result.stderr}")
+                    return self._get_fallback_transcript(audio_path)
+                
+                # Check compressed file size
+                compressed_size = PathlibPath(compressed_path).stat().st_size
+                logger.info(f"✓ Compressed audio size: {compressed_size / (1024*1024):.2f} MB")
+                
+                # Transcribe compressed file
+                with open(compressed_path, "rb") as audio_file:
+                    transcript = self.groq_client.audio.transcriptions.create(
+                        file=("audio.mp3", audio_file, "audio/mpeg"),
+                        model="whisper-large-v3-turbo",
+                        language="en",
+                    )
+                
+                text = transcript.text if hasattr(transcript, 'text') else str(transcript)
+                
+                # Get duration
+                from app.utils.audio_utils import AudioProcessor
+                audio_processor = AudioProcessor()
+                duration = audio_processor.get_duration(audio_path)
+                
+                logger.info(f"✓ Compressed transcription successful: {len(text)} characters")
+                
+                return [{
+                    "speaker": "Speaker 1",
+                    "text": text,
+                    "start_time": 0.0,
+                    "end_time": float(duration) if duration else 60.0
+                }]
+                
+            finally:
+                # Clean up compressed file
+                import os
+                try:
+                    if os.path.exists(compressed_path):
+                        os.remove(compressed_path)
+                        logger.info(f"Cleaned up compressed file: {compressed_path}")
+                except Exception as cleanup_error:
+                    logger.warning(f"Failed to clean up compressed file: {cleanup_error}")
+                    
+        except Exception as e:
+            logger.error(f"Error in compressed transcription: {e}", exc_info=True)
             return self._get_fallback_transcript(audio_path)
     
     def _transcribe_gemini(self, audio_path: str) -> List[Dict]:

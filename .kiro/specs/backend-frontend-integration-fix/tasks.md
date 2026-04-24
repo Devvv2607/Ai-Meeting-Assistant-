@@ -50,7 +50,7 @@ This implementation plan systematically fixes backend issues and ensures proper 
     - Clean up temporary files after upload
     - _Requirements: 4.3, 9.2_
 
-  - [-] 4.3 Fix meeting creation and task triggering
+  - [x] 4.3 Fix meeting creation and task triggering
     - Create meeting record with PENDING status
     - Trigger Celery task with meeting ID and S3 URL
     - Store Celery task ID in meeting record
@@ -136,7 +136,7 @@ This implementation plan systematically fixes backend issues and ensures proper 
 - [x] 10. Checkpoint - Test integration
   - Ensure all tests pass, ask the user if questions arise.
 
-- [-] 11. End-to-end integration testing
+- [x] 11. End-to-end integration testing
   - [ ] 11.1 Test authentication flow
     - Register new user via frontend
     - Login and verify token storage

@@ -1,0 +1,9 @@
+{
+  "specType": "feature",
+  "workflowType": "design-first",
+  "featureName": "advanced-meeting-features",
+  "displayName": "Advanced Meeting Intelligence Features",
+  "description": "PDF export, multilingual support, meeting Q&A chatbot, and document context upload",
+  "phases": 4,
+  "estimatedDays": 14
+}
