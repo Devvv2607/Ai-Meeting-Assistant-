@@ -1,0 +1,52 @@
+{
+  "specType": "feature",
+  "workflowType": "requirements-first",
+  "featureName": "hybrid-meeting-intelligence",
+  "displayName": "Hybrid Meeting Intelligence System",
+  "description": "Upgrade to support both recorded and live meetings with advanced speaker diarization, multilingual support, and real-time transcription",
+  "version": "1.0.0",
+  "status": "planning",
+  "phases": [
+    "Database & Backend Setup",
+    "Upload Recording Flow",
+    "Live Meeting Capture",
+    "Speaker Diarization & Multilingual",
+    "Frontend UI & Integration",
+    "Search & Insights",
+    "Testing & Optimization"
+  ],
+  "estimatedDays": 21,
+  "priority": "high",
+  "technologies": [
+    "FastAPI",
+    "Next.js",
+    "PostgreSQL",
+    "pgvector",
+    "pyannote.audio",
+    "Whisper API",
+    "Groq LLM",
+    "WebSocket",
+    "Redis",
+    "Celery"
+  ],
+  "keyFeatures": [
+    "Dashboard with upload and live meeting options",
+    "Upload recording flow with background processing",
+    "Live meeting capture with real-time captions",
+    "Advanced speaker diarization",
+    "Multilingual support",
+    "Transcript search with embeddings",
+    "AI insights generation",
+    "Professional SaaS UI"
+  ],
+  "successCriteria": [
+    "Dashboard working",
+    "Upload flow end-to-end",
+    "Live meeting capture working",
+    "Speaker diarization accurate",
+    "Multilingual support working",
+    "Search functionality working",
+    "Insights generation working",
+    "Production-ready code quality"
+  ]
+}
