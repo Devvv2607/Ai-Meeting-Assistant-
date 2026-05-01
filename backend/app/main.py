@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import Base, engine, test_database_connection
-from app.routers import auth_routes, meeting_routes, transcript_routes, summary_routes, export_routes, chatbot_routes
+from app.routers import auth_routes, meeting_routes, transcript_routes, summary_routes, export_routes, chatbot_routes, live_routes, websocket_routes
 from app.config import settings, validate_required_settings
 import logging
 import time
@@ -73,6 +73,8 @@ app.include_router(transcript_routes.router)
 app.include_router(summary_routes.router)
 app.include_router(export_routes.router)
 app.include_router(chatbot_routes.router)
+app.include_router(live_routes.router)
+app.include_router(websocket_routes.router)
 
 logger.info("API routers registered successfully")
 

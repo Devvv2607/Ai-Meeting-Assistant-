@@ -20,6 +20,13 @@ class Summary(Base):
     action_items = Column(JSON, nullable=True, default=[])
     sentiment = Column(String(50), nullable=True, default="neutral")
     
+    # Structured insights fields for live meeting intelligence
+    decisions = Column(JSON, nullable=True)
+    risks = Column(JSON, nullable=True)
+    next_steps = Column(JSON, nullable=True)
+    topics = Column(JSON, nullable=True)
+    meeting_analytics = Column(JSON, nullable=True)
+    
     # Metadata
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

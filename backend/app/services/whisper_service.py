@@ -3,6 +3,8 @@ import logging
 from app.config import settings
 import google.generativeai as genai
 from pathlib import Path
+import tempfile
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -433,6 +435,122 @@ If you cannot identify different speakers, use "Speaker 1" for all segments.
         for audio_path in audio_paths:
             results[audio_path] = self.transcribe(audio_path, language)
         return results
+
+    async def transcribe_stream(
+        self,
+        audio_segment: bytes,
+        language: Optional[str] = None
+    ) -> Dict:
+        """Transcribe audio segment for live streaming
+        
+        This method handles real-time transcription of 1-second audio segments
+        from the live meeting audio buffer. It saves the segment to a temporary
+        file, calls the Groq Whisper API, and returns structured results.
+        
+        Args:
+            audio_segment: Raw audio bytes (1-second segment in WAV format)
+            language: Optional language hint (e.g., 'en', 'hi', 'mr')
+            
+        Returns:
+            Dictionary with:
+                - text: Transcribed text
+                - confidence: Confidence score (0.0-1.0)
+                - language: Detected language code
+                
+        Raises:
+            Exception: If transcription fails after retries
+        """
+        if not self.groq_client:
+            logger.error("Groq client not initialized - cannot transcribe stream")
+            return {
+                "text": "[Transcription service unavailable]",
+                "confidence": 0.0,
+                "language": language or "en"
+            }
+        
+        temp_path = None
+        try:
+            # Save segment to temporary file
+            temp_path = self._save_temp_segment(audio_segment)
+            
+            logger.debug(f"Transcribing stream segment: {len(audio_segment)} bytes")
+            
+            # Transcribe using Groq Whisper API (whisper-large-v3-turbo for speed)
+            with open(temp_path, "rb") as audio_file:
+                transcript = self.groq_client.audio.transcriptions.create(
+                    file=(Path(temp_path).name, audio_file, "audio/wav"),
+                    model="whisper-large-v3-turbo",
+                    language=language or "en",
+                    response_format="verbose_json"  # Get detailed response with confidence
+                )
+            
+            # Extract text and metadata
+            text = transcript.text if hasattr(transcript, 'text') else str(transcript)
+            
+            # Extract confidence if available (Groq may not provide this)
+            confidence = getattr(transcript, 'confidence', 0.95)
+            
+            # Extract detected language
+            detected_language = getattr(transcript, 'language', language or 'en')
+            
+            logger.debug(
+                f"Stream transcription complete: {len(text)} chars, "
+                f"confidence={confidence:.2f}, language={detected_language}"
+            )
+            
+            return {
+                "text": text,
+                "confidence": confidence,
+                "language": detected_language
+            }
+            
+        except Exception as e:
+            logger.error(f"Error transcribing stream segment: {e}", exc_info=True)
+            # Return fallback result instead of raising
+            return {
+                "text": "[Transcription failed]",
+                "confidence": 0.0,
+                "language": language or "en"
+            }
+            
+        finally:
+            # Clean up temp file
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                    logger.debug(f"Cleaned up temp file: {temp_path}")
+                except Exception as cleanup_error:
+                    logger.warning(f"Failed to clean up temp file: {cleanup_error}")
+    
+    def _save_temp_segment(self, audio_data: bytes) -> str:
+        """Save audio segment to temporary file
+        
+        Args:
+            audio_data: Raw audio bytes in WAV format
+            
+        Returns:
+            Path to temporary file
+        """
+        try:
+            # Create temp file with .wav extension
+            temp_file = tempfile.NamedTemporaryFile(
+                suffix=".wav",
+                delete=False,
+                mode='wb'
+            )
+            
+            # Write audio data
+            temp_file.write(audio_data)
+            temp_file.flush()
+            temp_file.close()
+            
+            logger.debug(f"Saved audio segment to temp file: {temp_file.name}")
+            
+            return temp_file.name
+            
+        except Exception as e:
+            logger.error(f"Error saving temp audio segment: {e}", exc_info=True)
+            raise
 
 
 # Global Whisper service instance

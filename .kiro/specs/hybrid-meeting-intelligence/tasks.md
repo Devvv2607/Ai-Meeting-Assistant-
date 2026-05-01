@@ -84,7 +84,7 @@
 ## Phase 3: Live Meeting Capture (Days 7-10)
 
 ### Task 3.1: WebSocket Infrastructure
-- [ ] 3.1.1 Set up WebSocket support in FastAPI
+- [x] 3.1.1 Set up WebSocket support in FastAPI
 - [ ] 3.1.2 Create WebSocket connection handler
 - [ ] 3.1.3 Implement connection authentication
 - [ ] 3.1.4 Implement connection management

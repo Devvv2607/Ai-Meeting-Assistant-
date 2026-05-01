@@ -35,3 +35,11 @@ PyPDF2
 
 # Phase 2: Document Processing & Chatbot
 python-docx
+
+# Phase 3: Live Meeting WebSocket
+websockets
+python-socketio
+python-engineio
+
+# Phase 4: Speaker Diarization
+pyannote.audio

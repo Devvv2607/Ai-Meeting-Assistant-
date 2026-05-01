@@ -36,6 +36,8 @@ class Meeting(Base):
     summary = relationship("Summary", back_populates="meeting", uselist=False, cascade="all, delete-orphan")
     chat_messages = relationship("ChatMessage", back_populates="meeting", cascade="all, delete-orphan")
     documents = relationship("Document", back_populates="meeting", cascade="all, delete-orphan")
+    speakers = relationship("Speaker", back_populates="meeting", cascade="all, delete-orphan")
+    live_session = relationship("LiveSession", back_populates="meeting", uselist=False, cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Meeting(id={self.id}, title={self.title}, status={self.status})>"

@@ -95,7 +95,7 @@ export default function DashboardPage() {
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Navigation Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
           <Link
             href="/upload"
             className="bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-lg p-6 hover:shadow-lg transition-shadow"
@@ -104,7 +104,20 @@ export default function DashboardPage() {
               <FiPlus className="w-6 h-6" />
               <div>
                 <h3 className="font-semibold">Upload Meeting</h3>
-                <p className="text-sm opacity-90">Add new audio file</p>
+                <p className="text-sm opacity-90">Add audio file</p>
+              </div>
+            </div>
+          </Link>
+
+          <Link
+            href="/live-meeting"
+            className="bg-gradient-to-br from-red-500 to-red-600 text-white rounded-lg p-6 hover:shadow-lg transition-shadow"
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">🔴</span>
+              <div>
+                <h3 className="font-semibold">Live Meeting</h3>
+                <p className="text-sm opacity-90">Capture live</p>
               </div>
             </div>
           </Link>

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Float, ForeignKey, LargeBinary, Text
+from sqlalchemy import Column, Integer, String, DateTime, Float, ForeignKey, LargeBinary, Text, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.database import Base
@@ -17,6 +17,11 @@ class Transcript(Base):
     end_time = Column(Float, nullable=False)    # End time in seconds
     embedding = Column(LargeBinary, nullable=True)  # Store embedding as binary
     created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Live meeting fields
+    confidence = Column(Float, default=1.0)  # Transcription confidence score (0.0-1.0)
+    language = Column(String(10), default='en')  # Detected language code
+    is_final = Column(Boolean, default=True)  # Whether this is a final transcript or interim
 
     # Relationships
     meeting = relationship("Meeting", back_populates="transcripts")

@@ -159,6 +159,25 @@ class APIClient {
   async deleteDocument(meetingId: number, documentId: number) {
     return this.client.delete(`/api/v1/meetings/${meetingId}/documents/${documentId}`);
   }
+
+  // Live meeting endpoints
+  async startLiveMeeting(meetingTitle: string) {
+    return this.client.post("/api/v1/meetings/start-live", {}, {
+      params: { meeting_title: meetingTitle },
+    });
+  }
+
+  async endLiveMeeting(meetingId: number, sessionToken: string) {
+    return this.client.post(`/api/v1/meetings/${meetingId}/end`, {}, {
+      params: { session_token: sessionToken },
+    });
+  }
+
+  async getLiveStatus(meetingId: number, sessionToken: string) {
+    return this.client.get(`/api/v1/meetings/${meetingId}/live-status`, {
+      params: { session_token: sessionToken },
+    });
+  }
 }
 
 export const api = new APIClient();

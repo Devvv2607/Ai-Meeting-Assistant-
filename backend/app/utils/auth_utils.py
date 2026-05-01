@@ -3,6 +3,8 @@ from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from app.config import settings
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import logging
 import hashlib
 import bcrypt
@@ -11,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 # Password hashing - disable max_password_size validation since we pre-hash with SHA256
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
+security = HTTPBearer()
 
 
 def _hash_password_sha256(password: str) -> str:
@@ -70,3 +73,43 @@ def verify_token(token: str) -> Optional[dict]:
     except JWTError as e:
         logger.error(f"Token verification failed: {e}")
         return None
+
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Get current user from JWT token"""
+    token = credentials.credentials
+    payload = verify_token(token)
+    
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    user_id = payload.get("user_id")
+    email = payload.get("sub")
+    
+    if not user_id or not email:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token claims",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Import here to avoid circular imports
+    from app.models.user import User
+    from app.database import SessionLocal
+    
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return user
+    finally:
+        db.close()
