@@ -16,7 +16,10 @@ from app.database import get_db
 from app.utils.auth_utils import verify_token
 from app.models.live_session import LiveSession
 from app.models.user import User
+from app.models.transcript import Transcript
+from app.models.meeting import Meeting
 from app.services.live_audio_processor import LiveAudioProcessor
+from app.services.live_audio_recorder import live_audio_recorder
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +28,48 @@ router = APIRouter(tags=["websocket"])
 # Heartbeat configuration
 HEARTBEAT_INTERVAL = 30  # seconds
 HEARTBEAT_TIMEOUT = 10  # seconds
+
+# Approximate duration of each audio segment the frontend streams (seconds).
+# Used only to assign monotonic start/end timestamps to live transcript rows.
+SEGMENT_SECONDS = 4.0
+
+# Common single-word/filler hallucinations Whisper emits on silent segments.
+_NOISE_TEXT = {
+    "you", "thank you.", "thank you", "thanks for watching!", "thanks for watching.",
+    ".", "bye.", "bye", "okay.", "ok.", "so.", "uh.", "um.",
+}
+
+
+def _is_noise(text: str) -> bool:
+    """Filter out empty / silence-hallucination transcripts."""
+    t = text.strip().lower()
+    return len(t) < 2 or t in _NOISE_TEXT
+
+
+def _transcribe_webm_segment(whisper_service, data: bytes) -> tuple:
+    """Write a standalone WebM segment to a temp file and transcribe via Groq.
+
+    Returns (text, detected_language). Defined at module scope (not per-message)
+    and intended to run inside ``asyncio.to_thread`` so the blocking Groq call
+    does not stall the event loop.
+    """
+    import tempfile
+    import os as _os
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".webm", delete=False)
+    try:
+        tmp.write(data)
+        tmp.close()
+        segs = whisper_service.transcribe(tmp.name)
+        if not segs:
+            return "", None
+        seg = segs[0]
+        return seg.get("text", ""), seg.get("language")
+    finally:
+        try:
+            _os.remove(tmp.name)
+        except Exception:
+            pass
 
 
 class ConnectionManager:
@@ -286,7 +331,10 @@ async def websocket_live_endpoint(
     """
     db = next(get_db())
     audio_processor = LiveAudioProcessor(db)
-    
+    # Bound before the try so the finally can finalize the recording even if
+    # authentication/validation fails or the connection ends abnormally.
+    meeting_id = None
+
     try:
         # Authenticate user
         user = await authenticate_websocket(token, db)
@@ -328,31 +376,103 @@ async def websocket_live_endpoint(
             f"user={user.id}, meeting={live_session.meeting_id}"
         )
         
+        # Cache the meeting id once (avoids a DB re-query per segment after the
+        # ORM object is expired by commit()).
+        meeting_id = live_session.meeting_id
+
+        # Running audio-time cursor (seconds) used as a fallback when the client
+        # does not supply real per-segment timing. Advances for EVERY received
+        # segment (including filtered-silence ones) so timestamps track real
+        # audio position rather than collapsing.
+        audio_offset = 0.0
+        # Timing supplied by the client for the NEXT binary segment, if any.
+        pending_time: Optional[tuple] = None
+
         # Message handling loop
         while True:
             try:
                 # Receive message (can be bytes, text, or JSON)
                 message = await websocket.receive()
-                
-                # Handle binary audio data
+
+                # Handle binary audio data: each message is a standalone WebM
+                # segment from the browser. Transcribe it via Groq (off the event
+                # loop), persist it, and broadcast the transcript to the client.
                 if "bytes" in message:
                     audio_data = message["bytes"]
-                    
-                    # Store audio chunk
-                    audio_processor.store_audio_chunk(session_token, audio_data)
-                    
-                    chunk_count = audio_processor.get_chunk_count(session_token)
-                    
+
+                    # Persist the raw audio (decode→append PCM) for end-of-meeting
+                    # diarization. Runs in a worker thread so the blocking ffmpeg
+                    # decode does not stall the event loop. EVERY segment is
+                    # captured — including silence/noise ones filtered from the
+                    # transcript — so the saved file's duration matches the
+                    # real session length.
+                    try:
+                        await asyncio.to_thread(
+                            live_audio_recorder.append_segment, meeting_id, audio_data
+                        )
+                    except Exception as e:
+                        logger.warning(f"Live audio capture failed for {session_token}: {e}")
+
+                    # Determine this segment's start/end. Prefer the real timing
+                    # the client measured; fall back to the running offset.
+                    if pending_time is not None:
+                        start_time, end_time = pending_time
+                        pending_time = None
+                        audio_offset = end_time
+                    else:
+                        start_time = audio_offset
+                        end_time = audio_offset + SEGMENT_SECONDS
+                        audio_offset = end_time
+
+                    # Run the blocking Groq call in a worker thread so heartbeats
+                    # and other sessions are not blocked.
+                    detected_language = None
+                    try:
+                        text, detected_language = await asyncio.to_thread(
+                            _transcribe_webm_segment,
+                            audio_processor.whisper_service,
+                            audio_data,
+                        )
+                    except Exception as e:
+                        logger.error(f"Live transcription error for {session_token}: {e}")
+                        text = ""
+
+                    text = (text or "").strip()
+                    if not text or _is_noise(text):
+                        continue
+
+                    segment_language = detected_language or "unknown"
+
+                    # Persist the segment so the meeting detail page shows it too.
+                    try:
+                        transcript_row = Transcript(
+                            meeting_id=meeting_id,
+                            text=text,
+                            speaker="Speaker 1",
+                            language=segment_language,
+                            start_time=start_time,
+                            end_time=end_time,
+                            confidence=0.9,
+                            is_final=True,
+                        )
+                        db.add(transcript_row)
+                        db.commit()
+                    except Exception as e:
+                        logger.error(f"Failed to persist live transcript for {session_token}: {e}")
+                        db.rollback()
+
                     logger.info(
-                        f"Audio chunk stored for session {session_token}: "
-                        f"{len(audio_data)} bytes (total chunks: {chunk_count})"
+                        f"Live transcript [{session_token}] @{start_time:.1f}s: "
+                        f"{len(text)} chars"
                     )
-                    
-                    # Send acknowledgment
+
+                    # Broadcast to the client (flat shape the frontend expects).
                     await manager.send_message(session_token, {
-                        "type": "status",
-                        "status": "stored",
-                        "message": f"Audio chunk {chunk_count} stored ({len(audio_data)} bytes)"
+                        "type": "transcript",
+                        "text": text,
+                        "speaker": "Speaker 1",
+                        "language": segment_language,
+                        "timestamp": datetime.utcnow().isoformat(),
                     })
                     continue
                 
@@ -367,7 +487,18 @@ async def websocket_live_endpoint(
                             # Update heartbeat timestamp
                             manager.update_pong(session_token)
                             logger.debug(f"Pong received from {session_token}")
-                        
+
+                        elif message_type == "segment":
+                            # Real timing the client measured for the NEXT binary
+                            # segment it is about to send.
+                            try:
+                                pending_time = (
+                                    float(json_data.get("start", 0.0)),
+                                    float(json_data.get("end", 0.0)),
+                                )
+                            except (TypeError, ValueError):
+                                pending_time = None
+
                         elif message_type == "control":
                             action = json_data.get("action")
                             logger.info(f"Control message received: {action} from {session_token}")
@@ -419,5 +550,32 @@ async def websocket_live_endpoint(
             pass
     
     finally:
+        # Finalize the captured audio into ONE decodable WAV and store its path on
+        # the meeting so the later diarization task can find it. Runs on
+        # meeting-end AND on disconnect/error so an abnormal end never loses the file.
+        if meeting_id is not None:
+            try:
+                wav_path = await asyncio.to_thread(live_audio_recorder.finalize, meeting_id)
+                if wav_path:
+                    try:
+                        db.rollback()  # clear any failed transaction from the loop
+                    except Exception:
+                        pass
+                    meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+                    if meeting:
+                        meeting.audio_url = wav_path
+                        db.commit()
+                        logger.info(
+                            f"Stored live audio path on meeting {meeting_id}: {wav_path}"
+                        )
+            except Exception as e:
+                logger.error(
+                    f"Failed to finalize/persist live audio for meeting {meeting_id}: {e}"
+                )
+                try:
+                    live_audio_recorder.discard(meeting_id)
+                except Exception:
+                    pass
+
         db.close()
         manager.disconnect(session_token)

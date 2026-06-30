@@ -43,3 +43,4 @@ python-engineio
 
 # Phase 4: Speaker Diarization
 pyannote.audio
+imageio-ffmpeg>=0.5.1

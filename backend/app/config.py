@@ -15,6 +15,13 @@ if env_file_path.exists():
 else:
     logger.warning(f".env file not found at: {env_file_path}")
 
+# Configure ffmpeg (bundled via imageio-ffmpeg) before any pydub conversion runs.
+try:
+    from app.ffmpeg_setup import configure_ffmpeg
+    configure_ffmpeg()
+except Exception as _ffmpeg_err:  # never block startup on ffmpeg setup
+    logger.warning(f"ffmpeg setup skipped: {_ffmpeg_err}")
+
 
 class Settings(BaseSettings):
     """Application settings and configuration"""
@@ -69,6 +76,12 @@ class Settings(BaseSettings):
     WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "base")
     CHUNK_DURATION: int = 300  # 5 minutes in seconds
     DEVICE: str = os.getenv("DEVICE", "cpu")  # cuda or cpu
+
+    # Live-meeting audio capture (env-configurable).
+    # NOTE: single-instance / dev only. Files written here are EPHEMERAL on
+    # Cloud Run (lost on instance restart) — same constraint as the #1
+    # module-state blocker. GCS is the deploy-time replacement; not built here.
+    LIVE_AUDIO_DIR: str = os.getenv("LIVE_AUDIO_DIR", "backend/uploads/live_audio")
 
     # LLM Settings
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
