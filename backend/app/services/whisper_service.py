@@ -9,6 +9,27 @@ import os
 logger = logging.getLogger(__name__)
 
 
+def _ffmpeg_bin() -> str:
+    """Resolve the ffmpeg binary reliably.
+
+    NEVER depend on a bare ``"ffmpeg"`` on PATH — that's the prod-fragility that
+    silently broke the chunked path (shutil.which('ffmpeg') is None in this env).
+    Order: env FFMPEG_PATH → bundled imageio-ffmpeg → PATH lookup → "ffmpeg".
+    """
+    env = os.getenv("FFMPEG_PATH")
+    if env and os.path.exists(env):
+        return env
+    try:
+        import imageio_ffmpeg
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+        if exe and os.path.exists(exe):
+            return exe
+    except Exception:
+        pass
+    from shutil import which
+    return which("ffmpeg") or "ffmpeg"
+
+
 class WhisperService:
     """Service for speech-to-text transcription using Google Gemini API or Groq API"""
 
@@ -206,38 +227,58 @@ class WhisperService:
             chunk_prefix = os.path.join(temp_dir, "chunk")
             
             try:
-                # Use ffmpeg to split audio into 10-minute chunks
-                logger.info("Splitting audio into 10-minute chunks using ffmpeg")
-                
+                # Split into INDEPENDENTLY DECODABLE chunks. The old `-c copy`
+                # remux cut the compressed stream mid-frame → chunks Groq could not
+                # decode. Re-encoding each segment to a standalone MP3 (libmp3lame)
+                # produces self-contained, Groq-readable files. `-segment_list`
+                # records each chunk's EXACT absolute start time (CSV), and
+                # `-reset_timestamps 1` makes each chunk start at 0 internally so
+                # Groq returns chunk-relative times we offset by that absolute start.
+                segment_list = os.path.join(temp_dir, "segments.csv")
+                logger.info("Splitting audio into 10-minute decodable MP3 chunks")
+
                 cmd = [
-                    "ffmpeg",
+                    _ffmpeg_bin(),
+                    "-hide_banner", "-loglevel", "error",
                     "-i", audio_path,
+                    "-vn",
                     "-f", "segment",
-                    "-segment_time", "600",  # 10 minutes
-                    "-c", "copy",
+                    "-segment_time", "600",          # 10 minutes
+                    "-segment_list", segment_list,    # CSV: file,abs_start,abs_end
+                    "-reset_timestamps", "1",
+                    "-c:a", "libmp3lame", "-b:a", "64k",
                     "-y",
-                    f"{chunk_prefix}_%03d.m4a"
+                    f"{chunk_prefix}_%03d.mp3",
                 ]
-                
+
                 result = subprocess.run(cmd, capture_output=True, text=True)
-                
+
                 if result.returncode != 0:
                     logger.warning(f"ffmpeg split failed: {result.stderr}")
                     logger.info("Falling back to compression method")
                     return self._transcribe_groq_compressed(audio_path, language)
 
-                # Find all chunk files
-                chunk_files = sorted([f for f in os.listdir(temp_dir) if f.startswith("chunk_")])
-                logger.info(f"✓ Created {len(chunk_files)} audio chunks")
+                # Parse the segment list for each chunk's EXACT absolute start (seconds).
+                chunk_starts: Dict[str, float] = {}
+                try:
+                    with open(segment_list) as sl:
+                        for line in sl:
+                            parts = line.strip().split(",")
+                            if len(parts) >= 2:
+                                chunk_starts[os.path.basename(parts[0])] = float(parts[1])
+                except Exception as e:
+                    logger.warning(f"Could not parse segment list ({e}); using i*600 offsets")
 
-                # Transcribe each chunk
-                all_transcripts = []
+                chunk_files = sorted([f for f in os.listdir(temp_dir) if f.startswith("chunk_") and f.endswith(".mp3")])
+                logger.info(f"✓ Created {len(chunk_files)} decodable audio chunks")
+
                 detected_language = language
                 all_segments: List[Dict] = []
-                offset = 0.0
                 for i, chunk_file in enumerate(chunk_files):
                     chunk_path = os.path.join(temp_dir, chunk_file)
-                    logger.info(f"Transcribing chunk {i+1}/{len(chunk_files)}: {chunk_file}")
+                    # Exact absolute offset from ffmpeg's segment list (fallback i*600).
+                    offset = chunk_starts.get(chunk_file, i * 600.0)
+                    logger.info(f"Transcribing chunk {i+1}/{len(chunk_files)} @ abs {offset:.1f}s: {chunk_file}")
 
                     try:
                         with open(chunk_path, "rb") as audio_file:
@@ -254,14 +295,11 @@ class WhisperService:
                             transcript, detected_language, chunk_path, time_offset=offset
                         )
                         all_segments.extend(chunk_segs)
-                        if chunk_segs:
-                            offset = max(s["end_time"] for s in chunk_segs)
                         text = transcript.text if hasattr(transcript, 'text') else str(transcript)
                         logger.info(f"✓ Chunk {i+1} transcribed: {len(text)} chars, {len(chunk_segs)} segments")
 
                     except Exception as chunk_error:
                         logger.error(f"Error transcribing chunk {i+1}: {chunk_error}")
-                        offset += 600.0  # nominal 10-min chunk; keep the timeline advancing
 
                 from app.utils.audio_utils import AudioProcessor
                 duration = AudioProcessor().get_duration(audio_path)
@@ -309,8 +347,10 @@ class WhisperService:
                 logger.info("Compressing audio to 64kbps using ffmpeg")
                 
                 cmd = [
-                    "ffmpeg",
+                    _ffmpeg_bin(),
+                    "-hide_banner", "-loglevel", "error",
                     "-i", audio_path,
+                    "-vn",
                     "-b:a", "64k",  # 64kbps bitrate
                     "-y",
                     compressed_path
