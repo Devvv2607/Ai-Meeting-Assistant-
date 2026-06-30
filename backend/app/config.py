@@ -105,6 +105,10 @@ def validate_required_settings():
         "DB_NAME": settings.DB_NAME,
         "DB_HOST": settings.DB_HOST,
         "DB_PORT": settings.DB_PORT,
+        # Fail closed: the app's core features (transcription, summary, chat) are
+        # useless without a Groq key, so refuse to boot rather than silently
+        # serving fallback text on every request.
+        "GROQ_API_KEY": settings.GROQ_API_KEY,
     }
     
     missing_vars = []

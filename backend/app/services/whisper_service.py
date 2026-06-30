@@ -42,7 +42,9 @@ class WhisperService:
                 self.groq_client = None
                 return
             
-            self.groq_client = Groq(api_key=api_key)
+            # Live transcription path: short timeout + single retry so a stalled
+            # or rate-limited segment fails fast instead of amplifying load.
+            self.groq_client = Groq(api_key=api_key, timeout=15.0, max_retries=1)
             logger.info(f"✓ Groq transcription service initialized successfully (key: {api_key[:20]}...)")
         except Exception as e:
             logger.error(f"Failed to initialize Groq: {e}", exc_info=True)
@@ -78,11 +80,17 @@ class WhisperService:
             List of transcript segments with speaker, text, start_time, end_time
         """
         if self.provider == "groq":
-            return self._transcribe_groq(audio_path)
+            return self._transcribe_groq(audio_path, language)
         else:
             return self._transcribe_gemini(audio_path)
-    
-    def _transcribe_groq(self, audio_path: str) -> List[Dict]:
+
+    @staticmethod
+    def _lang_kwargs(language: Optional[str]) -> dict:
+        """Pass an explicit language to Groq only when one is set; otherwise omit
+        it so Whisper auto-detects (forcing 'en' mistranscribes non-English audio)."""
+        return {"language": language} if language else {}
+
+    def _transcribe_groq(self, audio_path: str, language: Optional[str] = None) -> List[Dict]:
         """Transcribe using Groq API with chunking for large files"""
         if not self.groq_client:
             logger.error("Groq client not initialized")
@@ -106,40 +114,43 @@ class WhisperService:
             
             if file_size > MAX_FILE_SIZE:
                 logger.info(f"File size ({file_size / (1024*1024):.2f} MB) exceeds Groq limit (25MB), splitting into chunks")
-                return self._transcribe_groq_chunked(audio_path)
+                return self._transcribe_groq_chunked(audio_path, language)
             
             # File is small enough, transcribe directly
             with open(audio_path, "rb") as audio_file:
                 transcript = self.groq_client.audio.transcriptions.create(
                     file=(Path(audio_path).name, audio_file, "audio/mpeg"),
                     model="whisper-large-v3-turbo",
-                    language="en",
+                    response_format="verbose_json",  # exposes detected language
+                    **self._lang_kwargs(language),
                 )
-            
+
             logger.info(f"Received transcription from Groq")
-            
+
             # Parse Groq response
             text = transcript.text if hasattr(transcript, 'text') else str(transcript)
-            
+            detected_language = getattr(transcript, "language", language) or language
+
             # Create segments from the transcription
             from app.utils.audio_utils import AudioProcessor
             audio_processor = AudioProcessor()
             duration = audio_processor.get_duration(audio_path)
-            
-            logger.info(f"✓ Transcription successful: {len(text)} characters")
-            
+
+            logger.info(f"✓ Transcription successful: {len(text)} characters (language: {detected_language})")
+
             return [{
                 "speaker": "Speaker 1",
                 "text": text,
                 "start_time": 0.0,
-                "end_time": float(duration) if duration else 60.0
+                "end_time": float(duration) if duration else 60.0,
+                "language": detected_language,
             }]
             
         except Exception as e:
             logger.error(f"Error transcribing audio with Groq: {e}", exc_info=True)
             return self._get_fallback_transcript(audio_path)
     
-    def _transcribe_groq_chunked(self, audio_path: str) -> List[Dict]:
+    def _transcribe_groq_chunked(self, audio_path: str, language: Optional[str] = None) -> List[Dict]:
         """Transcribe large audio files by splitting into chunks using ffmpeg"""
         try:
             import subprocess
@@ -172,27 +183,31 @@ class WhisperService:
                 if result.returncode != 0:
                     logger.warning(f"ffmpeg split failed: {result.stderr}")
                     logger.info("Falling back to compression method")
-                    return self._transcribe_groq_compressed(audio_path)
-                
+                    return self._transcribe_groq_compressed(audio_path, language)
+
                 # Find all chunk files
                 chunk_files = sorted([f for f in os.listdir(temp_dir) if f.startswith("chunk_")])
                 logger.info(f"✓ Created {len(chunk_files)} audio chunks")
-                
+
                 # Transcribe each chunk
                 all_transcripts = []
+                detected_language = language
                 for i, chunk_file in enumerate(chunk_files):
                     chunk_path = os.path.join(temp_dir, chunk_file)
                     logger.info(f"Transcribing chunk {i+1}/{len(chunk_files)}: {chunk_file}")
-                    
+
                     try:
                         with open(chunk_path, "rb") as audio_file:
                             transcript = self.groq_client.audio.transcriptions.create(
                                 file=(chunk_file, audio_file, "audio/mpeg"),
                                 model="whisper-large-v3-turbo",
-                                language="en",
+                                response_format="verbose_json",
+                                **self._lang_kwargs(language),
                             )
-                        
+
                         text = transcript.text if hasattr(transcript, 'text') else str(transcript)
+                        if not detected_language:
+                            detected_language = getattr(transcript, "language", None)
                         all_transcripts.append(text)
                         logger.info(f"✓ Chunk {i+1} transcribed: {len(text)} characters")
                         
@@ -214,9 +229,10 @@ class WhisperService:
                     "speaker": "Speaker 1",
                     "text": combined_text,
                     "start_time": 0.0,
-                    "end_time": float(duration) if duration else 60.0
+                    "end_time": float(duration) if duration else 60.0,
+                    "language": detected_language,
                 }]
-                
+
             finally:
                 # Clean up temp directory
                 import shutil
@@ -225,12 +241,12 @@ class WhisperService:
                     logger.info(f"Cleaned up temp directory: {temp_dir}")
                 except Exception as cleanup_error:
                     logger.warning(f"Failed to clean up temp directory: {cleanup_error}")
-                    
+
         except Exception as e:
             logger.error(f"Error in chunked transcription: {e}", exc_info=True)
-            return self._transcribe_groq_compressed(audio_path)
+            return self._transcribe_groq_compressed(audio_path, language)
     
-    def _transcribe_groq_compressed(self, audio_path: str) -> List[Dict]:
+    def _transcribe_groq_compressed(self, audio_path: str, language: Optional[str] = None) -> List[Dict]:
         """Transcribe by compressing the audio file using ffmpeg"""
         try:
             import subprocess
@@ -271,23 +287,26 @@ class WhisperService:
                     transcript = self.groq_client.audio.transcriptions.create(
                         file=("audio.mp3", audio_file, "audio/mpeg"),
                         model="whisper-large-v3-turbo",
-                        language="en",
+                        response_format="verbose_json",
+                        **self._lang_kwargs(language),
                     )
-                
+
                 text = transcript.text if hasattr(transcript, 'text') else str(transcript)
-                
+                detected_language = getattr(transcript, "language", language) or language
+
                 # Get duration
                 from app.utils.audio_utils import AudioProcessor
                 audio_processor = AudioProcessor()
                 duration = audio_processor.get_duration(audio_path)
-                
-                logger.info(f"✓ Compressed transcription successful: {len(text)} characters")
-                
+
+                logger.info(f"✓ Compressed transcription successful: {len(text)} characters (language: {detected_language})")
+
                 return [{
                     "speaker": "Speaker 1",
                     "text": text,
                     "start_time": 0.0,
-                    "end_time": float(duration) if duration else 60.0
+                    "end_time": float(duration) if duration else 60.0,
+                    "language": detected_language,
                 }]
                 
             finally:
@@ -480,8 +499,8 @@ If you cannot identify different speakers, use "Speaker 1" for all segments.
                 transcript = self.groq_client.audio.transcriptions.create(
                     file=(Path(temp_path).name, audio_file, "audio/wav"),
                     model="whisper-large-v3-turbo",
-                    language=language or "en",
-                    response_format="verbose_json"  # Get detailed response with confidence
+                    response_format="verbose_json",  # Get detailed response with confidence
+                    **self._lang_kwargs(language),  # auto-detect when unset
                 )
             
             # Extract text and metadata

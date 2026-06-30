@@ -66,45 +66,6 @@ async def get_transcript(
     }
 
 
-@router.get("/{meeting_id}/summary", response_model=SummaryResponse)
-async def get_summary(
-    meeting_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Get meeting summary
-
-    Args:
-        meeting_id: Meeting ID
-        current_user: Current user
-        db: Database session
-
-    Returns:
-        Meeting summary
-    """
-    meeting = (
-        db.query(Meeting)
-        .filter(Meeting.id == meeting_id, Meeting.user_id == current_user.id)
-        .first()
-    )
-
-    if not meeting:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Meeting not found",
-        )
-
-    summary = db.query(Summary).filter(Summary.meeting_id == meeting_id).first()
-
-    if not summary:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Summary not available yet. Meeting is still processing.",
-        )
-
-    return summary
-
-
 @router.get("/{meeting_id}/search", response_model=SearchResponse)
 async def search_transcript(
     meeting_id: int,

@@ -176,6 +176,7 @@ async def upload_meeting(
                                 meeting_id=meeting.id,
                                 speaker=segment.get("speaker", "Speaker 1"),
                                 text=segment.get("text", ""),
+                                language=segment.get("language"),
                                 start_time=float(segment.get("start_time", 0.0)),
                                 end_time=float(segment.get("end_time", 0.0))
                             )
@@ -388,6 +389,7 @@ async def get_transcripts(
                 "id": t.id,
                 "speaker": t.speaker,
                 "text": t.text,
+                "language": t.language,
                 "start_time": t.start_time,
                 "end_time": t.end_time
             }
