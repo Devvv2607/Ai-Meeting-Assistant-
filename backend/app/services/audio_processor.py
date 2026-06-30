@@ -51,6 +51,22 @@ class AudioProcessingService:
 
             logger.info(f"Generated {len(transcripts)} transcript segments for meeting {meeting_id}")
 
+            # Post-meeting speaker diarization: label each segment by speaker.
+            # Degrades to the single-speaker transcript on any failure.
+            try:
+                from app.services.diarization_service import diarization_service
+                turns = diarization_service.diarize(audio_path)
+                if turns:
+                    transcripts = diarization_service.align_speakers(transcripts, turns)
+                    transcripts = diarization_service.merge_consecutive(transcripts)
+                    speakers = sorted({t.get("speaker") for t in transcripts})
+                    logger.info(
+                        f"Diarized meeting {meeting_id}: {len(transcripts)} segments, "
+                        f"speakers={speakers}"
+                    )
+            except Exception as e:
+                logger.error(f"Diarization skipped for meeting {meeting_id}: {e}")
+
             # Generate embeddings (stub for now)
             embeddings = self._generate_segment_embeddings(transcripts)
 

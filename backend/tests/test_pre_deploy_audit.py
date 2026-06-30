@@ -237,3 +237,71 @@ def test_lang_kwargs_omits_when_unset():
     assert WhisperService._lang_kwargs(None) == {}
     assert WhisperService._lang_kwargs("") == {}
     assert WhisperService._lang_kwargs("mr") == {"language": "mr"}
+
+
+# ===================== diarization alignment (pure, no pyannote needed) =====================
+def _seg(s, e, t="x"):
+    return {"start_time": s, "end_time": e, "text": t, "speaker": "Speaker 1"}
+
+
+def test_align_basic_two_speakers():
+    from app.services.diarization_service import DiarizationService
+    turns = [("SPEAKER_00", 0, 5), ("SPEAKER_01", 5, 10)]
+    out = DiarizationService.align_speakers([_seg(0, 4), _seg(5, 9)], turns)
+    assert [s["speaker"] for s in out] == ["Speaker 1", "Speaker 2"]
+
+
+def test_align_label_stability_by_first_appearance():
+    from app.services.diarization_service import DiarizationService
+    turns = [("SPEAKER_01", 0, 5), ("SPEAKER_00", 5, 10)]
+    out = DiarizationService.align_speakers([_seg(1, 4), _seg(6, 9), _seg(2, 3)], turns)
+    # SPEAKER_01 appears first → Speaker 1, and stays Speaker 1 on its later segment.
+    assert [s["speaker"] for s in out] == ["Speaker 1", "Speaker 2", "Speaker 1"]
+
+
+def test_align_segment_spanning_two_speakers_uses_max_overlap():
+    from app.services.diarization_service import DiarizationService
+    turns = [("SPEAKER_00", 0, 5), ("SPEAKER_01", 5, 10)]
+    # 4–10 overlaps S00 by 1s, S01 by 5s → Speaker 2.
+    out = DiarizationService.align_speakers([_seg(4, 10)], turns)
+    assert out[0]["speaker"] == "Speaker 2"
+
+
+def test_align_segment_in_gap_uses_nearest():
+    from app.services.diarization_service import DiarizationService
+    turns = [("SPEAKER_00", 0, 5), ("SPEAKER_01", 20, 25)]
+    out = DiarizationService.align_speakers([_seg(6, 7)], turns)  # gap, nearest = S00
+    assert out[0]["speaker"] == "Speaker 1"
+
+
+def test_align_empty_turns_returns_unchanged():
+    from app.services.diarization_service import DiarizationService
+    segs = [_seg(0, 4)]
+    assert DiarizationService.align_speakers(segs, []) is segs
+
+
+def test_align_unknown_not_numbered():
+    from app.services.diarization_service import DiarizationService
+    turns = [("UNKNOWN", 0, 1), ("SPEAKER_00", 1, 5)]
+    out = DiarizationService.align_speakers([_seg(0, 1), _seg(2, 4)], turns)
+    assert out[0]["speaker"] == "Unknown"
+    assert out[1]["speaker"] == "Speaker 1"  # UNKNOWN excluded from numbering
+
+
+def test_align_never_alters_text():
+    from app.services.diarization_service import DiarizationService
+    out = DiarizationService.align_speakers([_seg(0, 4, "नमस्ते hello")], [("SPEAKER_00", 0, 5)])
+    assert out[0]["text"] == "नमस्ते hello"
+
+
+def test_merge_consecutive_same_speaker():
+    from app.services.diarization_service import DiarizationService
+    segs = [
+        {"speaker": "Speaker 1", "text": "a", "start_time": 0, "end_time": 2},
+        {"speaker": "Speaker 1", "text": "b", "start_time": 2, "end_time": 4},
+        {"speaker": "Speaker 2", "text": "c", "start_time": 4, "end_time": 6},
+    ]
+    out = DiarizationService.merge_consecutive(segs)
+    assert len(out) == 2
+    assert out[0]["text"] == "a b" and out[0]["end_time"] == 4
+    assert out[1]["speaker"] == "Speaker 2"

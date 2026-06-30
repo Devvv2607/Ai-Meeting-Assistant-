@@ -90,6 +90,50 @@ class WhisperService:
         it so Whisper auto-detects (forcing 'en' mistranscribes non-English audio)."""
         return {"language": language} if language else {}
 
+    def _build_segments(self, transcript, detected_language, audio_path, time_offset: float = 0.0) -> List[Dict]:
+        """Turn a Groq verbose_json response into fine-grained, timestamped segments.
+
+        Diarization needs per-segment timestamps to align speaker turns against.
+        Groq's verbose_json already returns a ``segments`` array; we surface it
+        (offset by ``time_offset`` for chunked audio). Falls back to a single
+        block when segments are unavailable.
+        """
+        text = transcript.text if hasattr(transcript, "text") else str(transcript)
+        raw_segs = getattr(transcript, "segments", None) or []
+
+        def _field(s, name):
+            return s.get(name) if isinstance(s, dict) else getattr(s, name, None)
+
+        out: List[Dict] = []
+        for s in raw_segs:
+            tx = _field(s, "text")
+            if tx is None:
+                continue
+            tx = tx.strip() if isinstance(tx, str) else str(tx)
+            if not tx:
+                continue
+            out.append({
+                "speaker": "Speaker 1",
+                "text": tx,
+                "start_time": float(_field(s, "start") or 0.0) + time_offset,
+                "end_time": float(_field(s, "end") or 0.0) + time_offset,
+                "language": detected_language,
+            })
+
+        if out:
+            return out
+
+        # Fallback: single block (e.g. segments missing on some responses).
+        from app.utils.audio_utils import AudioProcessor
+        duration = AudioProcessor().get_duration(audio_path)
+        return [{
+            "speaker": "Speaker 1",
+            "text": text,
+            "start_time": time_offset,
+            "end_time": (float(duration) if duration else 60.0) + time_offset,
+            "language": detected_language,
+        }]
+
     def _transcribe_groq(self, audio_path: str, language: Optional[str] = None) -> List[Dict]:
         """Transcribe using Groq API with chunking for large files"""
         if not self.groq_client:
@@ -136,15 +180,12 @@ class WhisperService:
             audio_processor = AudioProcessor()
             duration = audio_processor.get_duration(audio_path)
 
-            logger.info(f"✓ Transcription successful: {len(text)} characters (language: {detected_language})")
-
-            return [{
-                "speaker": "Speaker 1",
-                "text": text,
-                "start_time": 0.0,
-                "end_time": float(duration) if duration else 60.0,
-                "language": detected_language,
-            }]
+            segments = self._build_segments(transcript, detected_language, audio_path)
+            logger.info(
+                f"✓ Transcription successful: {len(text)} characters, "
+                f"{len(segments)} segments (language: {detected_language})"
+            )
+            return segments
             
         except Exception as e:
             logger.error(f"Error transcribing audio with Groq: {e}", exc_info=True)
@@ -192,6 +233,8 @@ class WhisperService:
                 # Transcribe each chunk
                 all_transcripts = []
                 detected_language = language
+                all_segments: List[Dict] = []
+                offset = 0.0
                 for i, chunk_file in enumerate(chunk_files):
                     chunk_path = os.path.join(temp_dir, chunk_file)
                     logger.info(f"Transcribing chunk {i+1}/{len(chunk_files)}: {chunk_file}")
@@ -205,29 +248,30 @@ class WhisperService:
                                 **self._lang_kwargs(language),
                             )
 
-                        text = transcript.text if hasattr(transcript, 'text') else str(transcript)
                         if not detected_language:
                             detected_language = getattr(transcript, "language", None)
-                        all_transcripts.append(text)
-                        logger.info(f"✓ Chunk {i+1} transcribed: {len(text)} characters")
-                        
+                        chunk_segs = self._build_segments(
+                            transcript, detected_language, chunk_path, time_offset=offset
+                        )
+                        all_segments.extend(chunk_segs)
+                        if chunk_segs:
+                            offset = max(s["end_time"] for s in chunk_segs)
+                        text = transcript.text if hasattr(transcript, 'text') else str(transcript)
+                        logger.info(f"✓ Chunk {i+1} transcribed: {len(text)} chars, {len(chunk_segs)} segments")
+
                     except Exception as chunk_error:
                         logger.error(f"Error transcribing chunk {i+1}: {chunk_error}")
-                        all_transcripts.append(f"[Chunk {i+1} transcription failed]")
-                
-                # Combine all transcripts
-                combined_text = " ".join(all_transcripts)
-                
-                # Get total duration
+                        offset += 600.0  # nominal 10-min chunk; keep the timeline advancing
+
                 from app.utils.audio_utils import AudioProcessor
-                audio_processor = AudioProcessor()
-                duration = audio_processor.get_duration(audio_path)
-                
-                logger.info(f"✓ Chunked transcription complete: {len(combined_text)} characters total")
-                
+                duration = AudioProcessor().get_duration(audio_path)
+                logger.info(f"✓ Chunked transcription complete: {len(all_segments)} segments total")
+
+                if all_segments:
+                    return all_segments
                 return [{
                     "speaker": "Speaker 1",
-                    "text": combined_text,
+                    "text": "",
                     "start_time": 0.0,
                     "end_time": float(duration) if duration else 60.0,
                     "language": detected_language,
@@ -294,20 +338,12 @@ class WhisperService:
                 text = transcript.text if hasattr(transcript, 'text') else str(transcript)
                 detected_language = getattr(transcript, "language", language) or language
 
-                # Get duration
-                from app.utils.audio_utils import AudioProcessor
-                audio_processor = AudioProcessor()
-                duration = audio_processor.get_duration(audio_path)
-
-                logger.info(f"✓ Compressed transcription successful: {len(text)} characters (language: {detected_language})")
-
-                return [{
-                    "speaker": "Speaker 1",
-                    "text": text,
-                    "start_time": 0.0,
-                    "end_time": float(duration) if duration else 60.0,
-                    "language": detected_language,
-                }]
+                segments = self._build_segments(transcript, detected_language, audio_path)
+                logger.info(
+                    f"✓ Compressed transcription successful: {len(text)} characters, "
+                    f"{len(segments)} segments (language: {detected_language})"
+                )
+                return segments
                 
             finally:
                 # Clean up compressed file
