@@ -380,8 +380,15 @@ async def get_transcripts(
             detail="Meeting not found",
         )
     
-    # Get transcripts
-    transcripts = db.query(Transcript).filter(Transcript.meeting_id == meeting_id).all()
+    # Get transcripts ordered by start_time so multi-row speaker-separated
+    # transcripts render in chronological order (a correct diarization was
+    # rendering out of order because rows came back in insertion order).
+    transcripts = (
+        db.query(Transcript)
+        .filter(Transcript.meeting_id == meeting_id)
+        .order_by(Transcript.start_time)
+        .all()
+    )
     
     return {
         "segments": [
