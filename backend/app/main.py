@@ -46,15 +46,19 @@ app = FastAPI(
 # Add CORS middleware
 # In production, replace with specific frontend domains
 allowed_origins = [
-    "http://localhost:3000",  # Local development
-    "http://frontend:3000",   # Docker frontend service
+    "http://localhost:3000",  # Local development (original port)
+    "http://localhost:3001",  # Local development (alternate port)
+    "http://localhost:3002",  # Local development (alternate port)
     "http://127.0.0.1:3000",  # Alternative localhost
+    "http://127.0.0.1:3001",  # Alternative localhost (alternate port)
+    "http://127.0.0.1:3002",  # Alternative localhost (alternate port)
+    "http://frontend:3000",   # Docker frontend service
 ]
 
 # Add environment-specific origins
 if settings.DEBUG:
     allowed_origins.append("*")  # Allow all in debug mode
-    logger.info("CORS: Allowing all origins (DEBUG mode)")
+    logger.info(f"CORS: Allowing all origins + specific list: {allowed_origins}")
 else:
     logger.info(f"CORS: Allowing origins: {allowed_origins}")
 
@@ -62,8 +66,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins if not settings.DEBUG else ["*"],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Include routers - all routes are already prefixed in the router definitions
