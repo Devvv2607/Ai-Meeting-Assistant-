@@ -65,10 +65,13 @@ class SummaryService:
         """Build chat messages with a system instruction + fenced, capped transcript (#2, #3)."""
         capped = self._cap_transcript(transcript_text)
         user_content = (
-            "Analyze the meeting transcript and return ONLY a JSON object with "
-            'these exact keys: "summary" (2-3 sentences), "key_points" (3-5 '
-            'strings), "action_items" (strings), "sentiment" '
-            '("positive" | "negative" | "neutral").\n\n'
+            "Write the MINUTES OF THE MEETING from the transcript and return ONLY a "
+            "JSON object with these exact keys: "
+            '"summary" (a 2-4 sentence overview of what the meeting was about), '
+            '"key_points" (4-8 strings capturing the important things discussed, '
+            "decisions made, and topics covered — the heart of the minutes), "
+            '"action_items" (strings — concrete follow-ups/tasks, who owns them if '
+            'stated), "sentiment" ("positive" | "negative" | "neutral").\n\n'
             f"{TRANSCRIPT_FENCE_START}\n{capped}\n{TRANSCRIPT_FENCE_END}"
         )
         return [

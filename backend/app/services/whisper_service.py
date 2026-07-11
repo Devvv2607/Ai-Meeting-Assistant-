@@ -90,18 +90,23 @@ class WhisperService:
         self,
         audio_path: str,
         language: Optional[str] = None,
+        translate: bool = False,
     ) -> List[Dict]:
         """Transcribe audio file using Groq or Gemini
 
         Args:
             audio_path: Path to audio file
             language: Optional language code (e.g., 'en', 'es')
+            translate: When True, always produce an ENGLISH transcript regardless
+                of the spoken language (Groq speech-translation endpoint). Used by
+                the post-meeting pipeline so the base transcript is always English
+                and can be translated on demand.
 
         Returns:
             List of transcript segments with speaker, text, start_time, end_time
         """
         if self.provider == "groq":
-            return self._transcribe_groq(audio_path, language)
+            return self._transcribe_groq(audio_path, language, translate)
         else:
             return self._transcribe_gemini(audio_path)
 
@@ -110,6 +115,28 @@ class WhisperService:
         """Pass an explicit language to Groq only when one is set; otherwise omit
         it so Whisper auto-detects (forcing 'en' mistranscribes non-English audio)."""
         return {"language": language} if language else {}
+
+    def _groq_stt(self, file_tuple, language: Optional[str], translate: bool):
+        """Call the right Groq speech endpoint for a single file.
+
+        translate=True → ``audio.translations`` (any language → English, model
+        ``whisper-large-v3`` which supports translation). Otherwise
+        ``audio.transcriptions`` (verbatim, language auto-detected). Both return a
+        ``verbose_json`` object with a ``segments`` array that ``_build_segments``
+        consumes identically.
+        """
+        if translate:
+            return self.groq_client.audio.translations.create(
+                file=file_tuple,
+                model="whisper-large-v3",
+                response_format="verbose_json",
+            )
+        return self.groq_client.audio.transcriptions.create(
+            file=file_tuple,
+            model="whisper-large-v3-turbo",
+            response_format="verbose_json",  # exposes detected language
+            **self._lang_kwargs(language),
+        )
 
     def _build_segments(self, transcript, detected_language, audio_path, time_offset: float = 0.0) -> List[Dict]:
         """Turn a Groq verbose_json response into fine-grained, timestamped segments.
@@ -155,7 +182,7 @@ class WhisperService:
             "language": detected_language,
         }]
 
-    def _transcribe_groq(self, audio_path: str, language: Optional[str] = None) -> List[Dict]:
+    def _transcribe_groq(self, audio_path: str, language: Optional[str] = None, translate: bool = False) -> List[Dict]:
         """Transcribe using Groq API with chunking for large files"""
         if not self.groq_client:
             logger.error("Groq client not initialized")
@@ -179,22 +206,20 @@ class WhisperService:
             
             if file_size > MAX_FILE_SIZE:
                 logger.info(f"File size ({file_size / (1024*1024):.2f} MB) exceeds Groq limit (25MB), splitting into chunks")
-                return self._transcribe_groq_chunked(audio_path, language)
-            
+                return self._transcribe_groq_chunked(audio_path, language, translate)
+
             # File is small enough, transcribe directly
             with open(audio_path, "rb") as audio_file:
-                transcript = self.groq_client.audio.transcriptions.create(
-                    file=(Path(audio_path).name, audio_file, "audio/mpeg"),
-                    model="whisper-large-v3-turbo",
-                    response_format="verbose_json",  # exposes detected language
-                    **self._lang_kwargs(language),
+                transcript = self._groq_stt(
+                    (Path(audio_path).name, audio_file, "audio/mpeg"), language, translate
                 )
 
             logger.info(f"Received transcription from Groq")
 
             # Parse Groq response
             text = transcript.text if hasattr(transcript, 'text') else str(transcript)
-            detected_language = getattr(transcript, "language", language) or language
+            # Translation output is always English; otherwise use Whisper's detection.
+            detected_language = "en" if translate else (getattr(transcript, "language", language) or language)
 
             # Create segments from the transcription
             from app.utils.audio_utils import AudioProcessor
@@ -212,7 +237,7 @@ class WhisperService:
             logger.error(f"Error transcribing audio with Groq: {e}", exc_info=True)
             return self._get_fallback_transcript(audio_path)
     
-    def _transcribe_groq_chunked(self, audio_path: str, language: Optional[str] = None) -> List[Dict]:
+    def _transcribe_groq_chunked(self, audio_path: str, language: Optional[str] = None, translate: bool = False) -> List[Dict]:
         """Transcribe large audio files by splitting into chunks using ffmpeg"""
         try:
             import subprocess
@@ -256,7 +281,7 @@ class WhisperService:
                 if result.returncode != 0:
                     logger.warning(f"ffmpeg split failed: {result.stderr}")
                     logger.info("Falling back to compression method")
-                    return self._transcribe_groq_compressed(audio_path, language)
+                    return self._transcribe_groq_compressed(audio_path, language, translate)
 
                 # Parse the segment list for each chunk's EXACT absolute start (seconds).
                 chunk_starts: Dict[str, float] = {}
@@ -282,14 +307,13 @@ class WhisperService:
 
                     try:
                         with open(chunk_path, "rb") as audio_file:
-                            transcript = self.groq_client.audio.transcriptions.create(
-                                file=(chunk_file, audio_file, "audio/mpeg"),
-                                model="whisper-large-v3-turbo",
-                                response_format="verbose_json",
-                                **self._lang_kwargs(language),
+                            transcript = self._groq_stt(
+                                (chunk_file, audio_file, "audio/mpeg"), language, translate
                             )
 
-                        if not detected_language:
+                        if translate:
+                            detected_language = "en"
+                        elif not detected_language:
                             detected_language = getattr(transcript, "language", None)
                         chunk_segs = self._build_segments(
                             transcript, detected_language, chunk_path, time_offset=offset
@@ -328,7 +352,7 @@ class WhisperService:
             logger.error(f"Error in chunked transcription: {e}", exc_info=True)
             return self._transcribe_groq_compressed(audio_path, language)
     
-    def _transcribe_groq_compressed(self, audio_path: str, language: Optional[str] = None) -> List[Dict]:
+    def _transcribe_groq_compressed(self, audio_path: str, language: Optional[str] = None, translate: bool = False) -> List[Dict]:
         """Transcribe by compressing the audio file using ffmpeg"""
         try:
             import subprocess
@@ -368,15 +392,12 @@ class WhisperService:
                 
                 # Transcribe compressed file
                 with open(compressed_path, "rb") as audio_file:
-                    transcript = self.groq_client.audio.transcriptions.create(
-                        file=("audio.mp3", audio_file, "audio/mpeg"),
-                        model="whisper-large-v3-turbo",
-                        response_format="verbose_json",
-                        **self._lang_kwargs(language),
+                    transcript = self._groq_stt(
+                        ("audio.mp3", audio_file, "audio/mpeg"), language, translate
                     )
 
                 text = transcript.text if hasattr(transcript, 'text') else str(transcript)
-                detected_language = getattr(transcript, "language", language) or language
+                detected_language = "en" if translate else (getattr(transcript, "language", language) or language)
 
                 segments = self._build_segments(transcript, detected_language, audio_path)
                 logger.info(

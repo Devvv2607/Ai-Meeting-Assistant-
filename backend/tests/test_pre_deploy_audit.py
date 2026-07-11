@@ -113,14 +113,31 @@ def test_chatbot_truncates_oversized_context():
     assert "[truncated]" in context
 
 
-# ===================== LENS 3 — silence/noise filter =====================
+# ===================== LENS 3 — record-only live path =====================
 
-def test_is_noise_filter():
-    from app.routers.websocket_routes import _is_noise
-    assert _is_noise("")
-    assert _is_noise("you")
-    assert _is_noise("Thank you.")
-    assert not _is_noise("Let us review the quarterly roadmap.")
+def test_websocket_route_is_record_only():
+    """Live transcription was removed: the WS route must only record audio
+    (live_audio_recorder), never transcribe or write Transcript rows live."""
+    import inspect
+    import app.routers.websocket_routes as wsr
+    src = inspect.getsource(wsr)
+    assert "live_audio_recorder" in src
+    assert not hasattr(wsr, "_is_noise")
+    assert not hasattr(wsr, "_transcribe_webm_segment")
+    assert "LiveAudioProcessor" not in src
+    assert "Transcript(" not in src
+
+
+def test_whisper_service_supports_translate_mode():
+    """English-only transcripts: transcribe() must accept translate=True and
+    the Groq helper must route it to the translations endpoint."""
+    import inspect
+    from app.services.whisper_service import WhisperService
+    sig = inspect.signature(WhisperService.transcribe)
+    assert "translate" in sig.parameters
+    src = inspect.getsource(WhisperService._groq_stt)
+    assert "audio.translations.create" in src
+    assert "whisper-large-v3" in src
 
 
 # ===================== LENS 6 — auth =====================
