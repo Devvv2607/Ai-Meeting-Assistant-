@@ -1,0 +1,13 @@
+# Never ship user audio, caches, or local test artifacts in the image
+uploads/
+backend/
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+tests/
+*.md
+.env
+Dockerfile
+Dockerfile.worker
+.dockerignore

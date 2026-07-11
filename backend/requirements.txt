@@ -12,9 +12,11 @@ boto3
 celery
 redis
 
-openai-whisper
+# torch is required by pyannote (CPU is enough; the Dockerfile installs the
+# CPU-only wheel first to keep the image small). openai-whisper and
+# sentence-transformers were removed: STT is Groq-hosted, embeddings are stubbed.
 torch
-sentence-transformers
+soundfile
 
 pgvector
 alembic
