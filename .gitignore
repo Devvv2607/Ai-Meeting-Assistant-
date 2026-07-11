@@ -2,6 +2,7 @@
 venv/
 venv_new/
 venv_local/
+venv_py310/
 .venv/
 env/
 ENV/
@@ -61,6 +62,10 @@ pip-delete-this-directory.txt
 
 # AWS/S3
 .aws/
+
+# Uploaded / recorded meeting audio (user data — never commit)
+backend/uploads/
+backend/backend/uploads/
 
 # Docker (add if only pushing source, not images)
 # docker-compose.override.yml
