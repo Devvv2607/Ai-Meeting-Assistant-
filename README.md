@@ -2,7 +2,17 @@
 
 A full-stack application for transcribing, analyzing, and summarizing meeting recordings using AI.
 
-## Features
+## ✨ Latest Updates
+
+**Integration Fix Complete** ✅
+- Database configuration with special character URL encoding
+- API routing standardized with /api/v1 prefix
+- CORS properly configured for frontend
+- Error handling and logging throughout system
+- Docker Compose with health checks and service dependencies
+- Comprehensive configuration and troubleshooting guides
+
+---
 
 ✅ **User Authentication**
 - Secure registration and login with JWT tokens
@@ -119,27 +129,55 @@ createdb ai_meeting
 
 ## Configuration
 
+### Quick Configuration
+
+**See [CONFIGURATION_GUIDE.md](CONFIGURATION_GUIDE.md) for comprehensive configuration documentation**
+
 ### Environment Variables (.env)
 
-```env
-# Database
-DB_USER=your_db_user
-DB_PASSWORD=your_db_password
-DB_NAME=ai_meeting
-DB_HOST=localhost
-DB_PORT=5433
+The application requires environment variables for database, authentication, and API services:
 
-# Groq API
-GROQ_API_KEY=your_groq_api_key_here
-LLM_MODEL=llama-3.3-70b-versatile
-LLM_PROVIDER=groq
+```env
+# Database (REQUIRED)
+DB_USER=aiuser
+DB_PASSWORD=your_secure_password_here  # Special chars auto URL-encoded
+DB_NAME=ai_meeting
+DB_HOST=localhost                       # 'postgres' in Docker
+DB_PORT=5433                            # 5432 in Docker
+
+# JWT Authentication (REQUIRED)
+SECRET_KEY=use-openssl-rand-hex-32      # Generate: openssl rand -hex 32
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+
+# External Services (REQUIRED)
+GROQ_API_KEY=your_groq_api_key_here    # Get from https://console.groq.com
+AWS_ACCESS_KEY_ID=your_aws_access_key
+AWS_SECRET_ACCESS_KEY=your_aws_secret_key
+AWS_REGION=us-east-1
+S3_BUCKET_NAME=ai-meeting-bucket
+
+# Cache & Queue
+REDIS_URL=redis://localhost:6379/0      # 'redis://redis:6379/0' in Docker
+CELERY_BROKER_URL=redis://localhost:6379/1
+CELERY_RESULT_BACKEND=redis://localhost:6379/2
 
 # Frontend
 NEXT_PUBLIC_API_URL=http://localhost:8000
 
-# JWT
-SECRET_KEY=your-secret-key-here
+# Optional
+WHISPER_MODEL=base                      # tiny, base, small, medium, large
+DEVICE=cpu                              # cpu or cuda (for GPU)
+LLM_MODEL=llama-3.3-70b-versatile       # Groq model selection
+DEBUG=False                             # True for development
 ```
+
+**Key Configuration Changes:**
+- ✅ Password URL encoding handles special characters automatically
+- ✅ Docker service names (postgres, redis) configured correctly
+- ✅ Comprehensive .env.example with all variables documented
+- ✅ Environment validation on startup with clear error messages
+- ✅ Support for development and production configurations
 
 ## Running Locally
 
@@ -313,45 +351,111 @@ docker-compose up -d
 
 ## Troubleshooting
 
-### Backend won't start
+### See [TROUBLESHOOTING_GUIDE.md](TROUBLESHOOTING_GUIDE.md) for comprehensive troubleshooting
+
+This guide covers common issues and solutions including:
+- Backend startup and crashes
+- Frontend connection issues
+- Database connection problems
+- Service dependency issues
+- File upload and processing errors
+- Docker configuration issues
+- Authentication and API errors
+
+### Quick Troubleshooting
+
+**Backend won't start**
 ```bash
 # Check if port 8000 is in use
 netstat -ano | findstr :8000
 
-# Restart backend
-. venv_local/Scripts/Activate.ps1
+# Verify .env exists with correct values
+cat .env | grep DB_
+
+# Reinstall dependencies
+pip install -r requirements.txt
+
+# Start backend with verbose logging
 python backend/start_server.py
 ```
 
-### Frontend won't start
+**Frontend can't connect to backend**
 ```bash
-# Clear cache and reinstall
-cd frontend
-rm -r node_modules .next
-npm install
-npm run dev
+# Verify backend is running
+curl http://localhost:8000/health
+# Should return: {"status": "ok"}
+
+# Check NEXT_PUBLIC_API_URL in .env
+cat .env | grep NEXT_PUBLIC_API_URL
+
+# Check browser console for CORS or network errors
+# (Press F12 in browser to open Developer Tools)
 ```
 
-### Summary generation fails
-1. Check backend logs
+**Summary generation fails**
+1. Check backend logs: `docker-compose logs backend`
 2. Verify Groq API key in .env
-3. Check database connection
-4. Verify PostgreSQL is running
+3. Check at https://console.groq.com if API key is active
+4. Ensure PostgreSQL and Redis are running
 
-### Database connection issues
+**Database connection issues**
 1. Ensure PostgreSQL is running
 2. Check connection string in .env
-3. Verify database exists
-4. Check user permissions
+3. Verify DB_USER and DB_PASSWORD are correct
+4. Test connection: `psql -U aiuser -d ai_meeting -h localhost -p 5433`
+
+**Docker services won't start**
+```bash
+# Check logs
+docker-compose logs
+
+# Verify Docker is running
+docker ps
+
+# Check .env file exists
+ls .env
+
+# Start services
+docker-compose up -d
+```
+
+### Common Issues
+
+| Issue | Solution |
+|-------|----------|
+| `ModuleNotFoundError: No module named 'fastapi'` | Run: `pip install -r requirements.txt` |
+| `Address already in use :8000` | Kill existing process or use different port |
+| `Connection refused` to database | Start PostgreSQL |
+| `CORS error` from browser | Verify frontend origin in backend CORS config |
+| `JWT token expired` | Login again (tokens expire after 30 minutes) |
+| `File upload fails` | Check file format (.wav, .mp3, .m4a, .mp4) and size (<2GB) |
+
+---
+
+### Detailed Diagnostics
 
 ## Documentation
 
-- **QUICK_START.md** - Quick start guide
-- **DEVELOPMENT.md** - Development setup
-- **DEPLOYMENT.md** - Production deployment
-- **API.md** - API documentation
-- **SUMMARY_AND_INSIGHTS_FIX.md** - Summary & Insights implementation
-- **SYSTEM_STATUS.md** - System status report
+This project includes comprehensive documentation for all aspects of the system:
+
+### Getting Started
+- **[README.md](README.md)** - This file, overview and quick start
+- **[QUICK_START.md](QUICK_START.md)** - Fast setup for development
+- **[CONFIGURATION_GUIDE.md](CONFIGURATION_GUIDE.md)** - Complete configuration reference
+
+### Operations & Maintenance
+- **[TROUBLESHOOTING_GUIDE.md](TROUBLESHOOTING_GUIDE.md)** - Solutions for common issues
+- **[API.md](API.md)** - API endpoints and usage
+
+### Technical Details
+- **[DEVELOPMENT.md](DEVELOPMENT.md)** - Development setup and guidelines
+- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Production deployment steps
+- **[PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md)** - Project structure overview
+- **[SYSTEM_STATUS.md](SYSTEM_STATUS.md)** - Current system status
+
+### Backend Documentation
+- **[INTERVIEW_COMPLETE_ANSWERS.md](INTERVIEW_COMPLETE_ANSWERS.md)** - Implementation Q&A
+- **[INTERVIEW_CODE_EXPLANATION.md](INTERVIEW_CODE_EXPLANATION.md)** - Code walkthroughs
 
 ## Contributing
 
@@ -385,6 +489,41 @@ For issues or questions:
 - [ ] Email notifications
 - [ ] Team collaboration
 - [ ] Mobile app
+
+## Integration Fixes & Improvements
+
+### Database & Configuration
+- ✅ **Password URL Encoding**: Special characters in database passwords are automatically URL-encoded (e.g., `pass@word` → `pass%40word`)
+- ✅ **Environment Validation**: Clear error messages when required variables are missing
+- ✅ **Connection Pooling**: Optimized with pool_size=20, max_overflow=40
+
+### API & Routing
+- ✅ **Consistent /api/v1 Prefix**: All API endpoints use standardized prefix
+- ✅ **CORS Configuration**: Properly configured for frontend origins, with wildcard support in debug mode
+- ✅ **Request Logging**: All HTTP requests logged with timing information
+
+### Authentication & Security
+- ✅ **JWT Token Management**: Secure token creation with 30-minute expiration
+- ✅ **Password Hashing**: Bcrypt with automatic salt generation
+- ✅ **Error Response Format**: Consistent error responses with "detail" field
+
+### Error Handling
+- ✅ **Comprehensive Logging**: All operations logged with timestamps and context
+- ✅ **Database Error Handling**: Transaction rollback on errors
+- ✅ **File Upload Validation**: Type and size validation with clear error messages
+
+### Docker & Deployment
+- ✅ **Health Checks**: All services configured with health checks
+- ✅ **Service Dependencies**: Proper depends_on configuration with health conditions
+- ✅ **Environment Variable Passing**: Correct variable injection to all services
+- ✅ **Service Networking**: Internal communication using service names
+
+### Monitoring & Debugging
+- ✅ **Docker Compose Logs**: Easy debugging with `docker-compose logs <service>`
+- ✅ **Health Endpoints**: `/health` endpoint for backend monitoring
+- ✅ **Status Page**: System insights available via `/api/v1/insights`
+
+---
 
 ## Status
 
