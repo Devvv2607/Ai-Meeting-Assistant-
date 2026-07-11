@@ -168,8 +168,12 @@ class APIClient {
   }
 
   async endLiveMeeting(meetingId: number, sessionToken: string) {
+    // Ending runs the full pipeline (English transcription + speaker
+    // diarization + minutes) synchronously and can take 1-2 minutes, so allow
+    // a generous timeout instead of the axios default.
     return this.client.post(`/api/v1/meetings/${meetingId}/end`, {}, {
       params: { session_token: sessionToken },
+      timeout: 300000,
     });
   }
 

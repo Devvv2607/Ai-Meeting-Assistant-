@@ -1,31 +1,13 @@
-"use client";
+'use client';
 
-import React, { useState, useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
-import { api } from "@/services/api";
-import TranscriptViewer from "@/components/TranscriptViewer";
-import SummaryPanel from "@/components/SummaryPanel";
-import SearchBar from "@/components/SearchBar";
-import MeetingChatbot from "@/components/MeetingChatbot";
-import { FiArrowLeft, FiLoader, FiDownload, FiGlobe } from "react-icons/fi";
-import Link from "next/link";
+import { useEffect, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { api } from '@/services/api';
+import AppShell from '@/components/layout/AppShell';
+import ChatPanel, { ChatMessage, Citation } from '@/components/chat/ChatPanel';
+import { fmtClock, fmtDuration, dateBadge } from '@/lib/format';
 
-interface Meeting {
-  id: number;
-  title: string;
-  status: string;
-  duration?: number;
-  created_at: string;
-}
-
-interface Summary {
-  summary?: string;
-  key_points?: string[];
-  action_items?: any[];
-  sentiment?: string;
-}
-
-interface Transcript {
+interface Segment {
   id: number;
   speaker: string;
   text: string;
@@ -33,347 +15,337 @@ interface Transcript {
   end_time: number;
 }
 
+interface SummaryData {
+  summary: string;
+  key_points: string[];
+  action_items: string[];
+  sentiment: string;
+}
+
+function sourcesToCites(sources: any[]): Citation[] {
+  if (!Array.isArray(sources)) return [];
+  return sources
+    .map((s) => {
+      const label = s.time || s.filename || s.speaker || 'source';
+      return { label: String(label) };
+    })
+    .slice(0, 4);
+}
+
 export default function MeetingDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const meetingId = parseInt(params.id as string);
+  const meetingId = Number(params?.id);
 
-  const [meeting, setMeeting] = useState<Meeting | null>(null);
-  const [transcript, setTranscript] = useState<Transcript[]>([]);
-  const [summary, setSummary] = useState<Summary | null>(null);
-  const [isLoadingMeeting, setIsLoadingMeeting] = useState(true);
-  const [error, setError] = useState("");
-  const [activeTab, setActiveTab] = useState<"transcript" | "summary">("transcript");
-  const [selectedLanguage, setSelectedLanguage] = useState("en");
-  const [translatedTranscript, setTranslatedTranscript] = useState<Transcript[]>([]);
-  const [isTranslating, setIsTranslating] = useState(false);
-  const [isDownloadingPDF, setIsDownloadingPDF] = useState(false);
+  const [meeting, setMeeting] = useState<any>(null);
+  const [segments, setSegments] = useState<Segment[]>([]);
+  const [summary, setSummary] = useState<SummaryData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [history, setHistory] = useState<ChatMessage[]>([]);
+  const [checked, setChecked] = useState<Record<number, boolean>>({});
+
+  // Transcript translation. The stored transcript is always English; the user
+  // can translate the displayed view into any supported language on demand.
+  const [languages, setLanguages] = useState<Record<string, string>>({});
+  const [transLang, setTransLang] = useState('en');
+  const [translatedSegs, setTranslatedSegs] = useState<Segment[] | null>(null);
+  const [translating, setTranslating] = useState(false);
 
   useEffect(() => {
-    loadMeetingData();
+    if (!meetingId) return;
+
+    const load = async () => {
+      try {
+        const [mRes, tRes] = await Promise.all([
+          api.getMeeting(meetingId),
+          api.getTranscript(meetingId),
+        ]);
+        setMeeting(mRes.data);
+        setSegments(tRes.data?.segments || []);
+      } catch {
+        /* meeting may not exist */
+      }
+
+      // Summary may 400 if no transcript yet — tolerate it.
+      try {
+        const sRes = await api.getSummary(meetingId);
+        setSummary(sRes.data);
+      } catch {
+        setSummary(null);
+      }
+
+      // Supported translation languages (for the transcript translate control).
+      try {
+        const lRes = await api.getSupportedLanguages();
+        setLanguages(lRes.data?.languages || {});
+      } catch {
+        /* translation optional */
+      }
+
+      // Prefill chat history.
+      try {
+        const hRes = await api.getChatHistory(meetingId);
+        const msgs: ChatMessage[] = (hRes.data?.messages || []).map((m: any) => ({
+          role: m.role === 'user' ? 'user' : 'assistant',
+          text: m.content,
+          cites: sourcesToCites(m.sources),
+        }));
+        setHistory(msgs);
+      } catch {
+        /* ignore */
+      }
+
+      setLoading(false);
+    };
+
+    load();
   }, [meetingId]);
 
-  const loadMeetingData = async () => {
-    try {
-      setIsLoadingMeeting(true);
-      const [meetingRes, transcriptRes] = await Promise.all([
-        api.getMeeting(meetingId),
-        api.getTranscript(meetingId),
-      ]);
-
-      setMeeting(meetingRes.data);
-      setTranscript(transcriptRes.data.segments || []);
-
-      // Load summary if available
-      try {
-        const summaryRes = await api.getSummary(meetingId);
-        setSummary(summaryRes.data);
-      } catch (err: any) {
-        // Summary might not be ready yet or needs to be generated
-        console.log("Summary not available yet, will generate on demand");
-      }
-    } catch (err: any) {
-      if (err.response?.status === 401) {
-        router.push("/login");
-      } else {
-        setError("Failed to load meeting data");
-      }
-    } finally {
-      setIsLoadingMeeting(false);
-    }
+  const resolve = async (question: string) => {
+    const res = await api.askQuestion(meetingId, question);
+    return { answer: res.data.answer as string, cites: sourcesToCites(res.data.sources) };
   };
 
-  const generateSummary = async () => {
-    try {
-      const summaryRes = await api.getSummary(meetingId);
-      setSummary(summaryRes.data);
-    } catch (err: any) {
-      console.error("Failed to generate summary:", err);
-      setError("Failed to generate summary");
-    }
-  };
-
-  const handleSearch = async (query: string) => {
-    try {
-      const response = await api.searchTranscript(meetingId, query, 5);
-      return response.data.results || [];
-    } catch (err) {
-      console.error("Search failed:", err);
-      return [];
-    }
-  };
-
-  const handleDownloadPDF = async () => {
-    try {
-      setIsDownloadingPDF(true);
-      const response = await api.downloadTranscriptPDF(meetingId);
-      
-      // Create blob and download
-      const blob = new Blob([response.data], { type: 'application/pdf' });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${meeting?.title || 'transcript'}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-    } catch (err: any) {
-      console.error("Failed to download PDF:", err);
-      setError("Failed to download PDF");
-    } finally {
-      setIsDownloadingPDF(false);
-    }
-  };
-
-  const handleTranslate = async (language: string) => {
-    if (language === "en") {
-      setTranslatedTranscript([]);
-      setSelectedLanguage(language);
+  const translate = async (lang: string) => {
+    setTransLang(lang);
+    if (lang === 'en') {
+      setTranslatedSegs(null); // show the original English transcript
       return;
     }
-
+    setTranslating(true);
     try {
-      setIsTranslating(true);
-      const response = await api.translateTranscript(meetingId, language);
-      setTranslatedTranscript(response.data.segments || []);
-      setSelectedLanguage(language);
-    } catch (err: any) {
-      console.error("Failed to translate:", err);
-      setError("Failed to translate transcript");
+      const res = await api.translateTranscript(meetingId, lang);
+      const segs: Segment[] = (res.data?.segments || []).map((s: any, i: number) => ({
+        id: segments[i]?.id ?? i,
+        speaker: s.speaker,
+        text: s.text,
+        start_time: s.start_time,
+        end_time: s.end_time,
+      }));
+      setTranslatedSegs(segs);
+    } catch {
+      setTranslatedSegs(null);
+      setTransLang('en');
     } finally {
-      setIsTranslating(false);
+      setTranslating(false);
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "completed":
-        return "bg-green-100 text-green-800";
-      case "processing":
-        return "bg-yellow-100 text-yellow-800";
-      case "failed":
-        return "bg-red-100 text-red-800";
-      default:
-        return "bg-gray-100 text-gray-800";
-    }
-  };
+  const shownSegments = translatedSegs ?? segments;
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString();
-  };
-
-  const formatDuration = (seconds?: number) => {
-    if (!seconds) return "-";
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-    if (hours > 0) {
-      return `${hours}h ${minutes % 60}m`;
-    }
-    return `${minutes}m`;
-  };
-
-  if (isLoadingMeeting) {
+  if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <FiLoader className="w-12 h-12 text-gray-400 mx-auto mb-4 animate-spin" />
-          <p className="text-gray-600">Loading meeting...</p>
+      <AppShell>
+        <div className="px-10 py-12">
+          <div className="h-8 w-64 animate-pulse rounded bg-surface2" />
+          <div className="mt-6 h-40 animate-pulse rounded-xl bg-surface2" />
         </div>
-      </div>
+      </AppShell>
     );
   }
 
-  if (error || !meeting) {
+  if (!meeting) {
     return (
-      <div className="min-h-screen bg-gray-50 py-12 px-4">
-        <div className="max-w-4xl mx-auto">
-          <Link
-            href="/dashboard"
-            className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-500 mb-4"
-          >
-            <FiArrowLeft className="w-5 h-5" />
-            Back to Dashboard
-          </Link>
-          <div className="rounded-md bg-red-50 p-4">
-            <p className="text-red-800">{error || "Meeting not found"}</p>
-          </div>
+      <AppShell>
+        <div className="px-10 py-12">
+          <button onClick={() => router.push('/dashboard')} className="text-[14px] text-accent-ink hover:underline">
+            ← Back to home
+          </button>
+          <p className="mt-6 text-[16px] text-ink2">Meeting not found.</p>
         </div>
-      </div>
+      </AppShell>
     );
   }
+
+  const badge = dateBadge(meeting.created_at);
+  const status = (meeting.status || '').toLowerCase();
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <Link
-            href="/dashboard"
-            className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-500 mb-4"
-          >
-            <FiArrowLeft className="w-5 h-5" />
-            Back to Dashboard
-          </Link>
-          <div className="flex items-start justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">{meeting.title}</h1>
-              <div className="mt-2 flex items-center gap-4 text-sm text-gray-600">
-                <span>{formatDate(meeting.created_at)}</span>
-                <span>{formatDuration(meeting.duration)}</span>
-                <span
-                  className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(
-                    meeting.status
-                  )}`}
-                >
-                  {meeting.status.charAt(0).toUpperCase() + meeting.status.slice(1)}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {meeting.status === "processing" && (
-          <div className="mb-6 rounded-md bg-blue-50 p-4 border border-blue-200">
-            <p className="text-blue-800">
-              Your meeting is being processed. Check back shortly for transcript and summary.
-            </p>
-          </div>
-        )}
-
-        {/* Search Bar */}
-        <div className="mb-6">
-          <SearchBar onSearch={handleSearch} />
-        </div>
-
-        {/* Action Buttons */}
-        <div className="mb-6 flex gap-4 flex-wrap">
-          {/* PDF Download Button */}
+    <AppShell>
+      <div className="grid gap-0 lg:grid-cols-[1fr_396px]">
+        {/* Main content */}
+        <div className="mgScroll px-10 py-10">
           <button
-            onClick={handleDownloadPDF}
-            disabled={isDownloadingPDF}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+            onClick={() => router.push('/dashboard')}
+            className="text-[13.5px] text-ink2 transition-colors hover:text-ink"
           >
-            <FiDownload className="w-5 h-5" />
-            {isDownloadingPDF ? "Downloading..." : "Download PDF"}
+            ← Back to home
           </button>
 
-          {/* Language Selector */}
-          <div className="flex items-center gap-2">
-            <FiGlobe className="w-5 h-5 text-gray-600" />
-            <select
-              value={selectedLanguage}
-              onChange={(e) => handleTranslate(e.target.value)}
-              disabled={isTranslating}
-              className="px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 hover:border-gray-400 disabled:bg-gray-100 disabled:cursor-not-allowed transition-colors"
-            >
-              <option value="en">English</option>
-              <option value="es">Spanish</option>
-              <option value="fr">French</option>
-              <option value="de">German</option>
-              <option value="it">Italian</option>
-              <option value="pt">Portuguese</option>
-              <option value="ru">Russian</option>
-              <option value="zh">Chinese</option>
-              <option value="ja">Japanese</option>
-              <option value="ko">Korean</option>
-              <option value="ar">Arabic</option>
-              <option value="hi">Hindi</option>
-            </select>
-            {isTranslating && <FiLoader className="w-5 h-5 text-blue-600 animate-spin" />}
-          </div>
-        </div>
-
-        {/* Tabs */}
-        <div className="mb-6 border-b border-gray-200">
-          <div className="flex gap-8">
-            <button
-              onClick={() => setActiveTab("transcript")}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeTab === "transcript"
-                  ? "border-blue-500 text-blue-600"
-                  : "border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300"
-              }`}
-            >
-              Transcript ({transcript.length} segments)
-            </button>
-            <button
-              onClick={() => setActiveTab("summary")}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeTab === "summary"
-                  ? "border-blue-500 text-blue-600"
-                  : "border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300"
-              }`}
-            >
-              Summary & Insights
-            </button>
-          </div>
-        </div>
-
-        {/* Tab Content */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2">
-            {activeTab === "transcript" && (
-              <TranscriptViewer segments={translatedTranscript.length > 0 ? translatedTranscript : transcript} />
+          <div className="mt-5 flex items-center gap-2.5">
+            <span className="font-mono text-[11.5px] uppercase tracking-wider text-muted2">
+              {badge.mon} {badge.day}
+            </span>
+            {status === 'completed' && (
+              <span className="flex items-center gap-1.5 rounded-md bg-ok-bg px-2.5 py-1 text-[11.5px] text-ok-ink">
+                <span className="h-1.5 w-1.5 rounded-full bg-ok-dot" /> Summarized
+              </span>
             )}
-            {activeTab === "summary" && (
-              <div className="space-y-6">
-                <SummaryPanel
-                  summary={summary?.summary}
-                  keyPoints={summary?.key_points}
-                  actionItems={summary?.action_items}
-                  sentiment={summary?.sentiment}
-                  isLoading={meeting.status === "processing"}
-                  onGenerateSummary={generateSummary}
-                />
-                <MeetingChatbot meetingId={meetingId} />
-              </div>
-            )}
+            {status === 'processing' && (
+              <span className="rounded-md bg-accent-soft px-2.5 py-1 text-[11.5px] text-accent-ink">
+                Processing…
+              </span>
             )}
           </div>
 
-          {/* Sidebar */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Quick Info
-            </h3>
-            <dl className="space-y-4">
-              <div>
-                <dt className="text-sm font-medium text-gray-600">Status</dt>
-                <dd className="mt-1">
-                  <span
-                    className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(
-                      meeting.status
-                    )}`}
+          <h1 className="mt-3 max-w-[760px] font-display text-[clamp(28px,4vw,40px)] font-medium leading-tight tracking-[-0.01em] text-ink">
+            {meeting.title}
+          </h1>
+
+          <div className="mt-3 flex items-center gap-4 font-mono text-[12.5px] text-muted3">
+            <span>{fmtDuration(meeting.duration)}</span>
+            {summary?.sentiment && <span className="capitalize">· {summary.sentiment}</span>}
+          </div>
+
+          {/* Key moments */}
+          {summary?.key_points && summary.key_points.length > 0 && (
+            <section className="mt-9 max-w-[760px]">
+              <h2 className="mb-3 font-display text-[20px] font-semibold text-ink">Key points</h2>
+              <ul className="space-y-3 border-l-2 border-line pl-5">
+                {summary.key_points.map((kp, i) => (
+                  <li key={i} className="relative">
+                    <span className="absolute -left-[26px] top-1.5 h-2.5 w-2.5 rounded-full bg-lime" />
+                    <p className="text-[15px] leading-relaxed text-ink-soft">{kp}</p>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {/* Minutes of the meeting */}
+          <section className="mt-9 max-w-[760px]">
+            <h2 className="mb-3 font-display text-[20px] font-semibold text-ink">
+              Minutes of the meeting
+            </h2>
+            {summary?.summary ? (
+              <p className="text-[15.5px] leading-[1.7] text-ink-soft">{summary.summary}</p>
+            ) : (
+              <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[14px] text-ink3">
+                {status === 'completed'
+                  ? 'No minutes available for this meeting.'
+                  : 'Minutes will appear once transcription finishes.'}
+              </p>
+            )}
+          </section>
+
+          {/* Action items */}
+          {summary?.action_items && summary.action_items.length > 0 && (
+            <section className="mt-9 max-w-[760px]">
+              <h2 className="mb-3 font-display text-[20px] font-semibold text-ink">Action items</h2>
+              <div className="space-y-2">
+                {summary.action_items.map((a, i) => (
+                  <label
+                    key={i}
+                    className="flex cursor-pointer items-start gap-3 rounded-lg border border-line bg-surface px-4 py-3"
                   >
-                    {meeting.status.charAt(0).toUpperCase() +
-                      meeting.status.slice(1)}
-                  </span>
-                </dd>
+                    <button
+                      type="button"
+                      onClick={() => setChecked((c) => ({ ...c, [i]: !c[i] }))}
+                      className={`mt-0.5 flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-[5px] border text-[11px] ${
+                        checked[i]
+                          ? 'border-accent bg-accent text-on-accent'
+                          : 'border-line-input bg-surface3 text-transparent'
+                      }`}
+                    >
+                      ✓
+                    </button>
+                    <span
+                      className={`text-[14.5px] leading-relaxed ${
+                        checked[i] ? 'text-ink3 line-through' : 'text-ink-soft'
+                      }`}
+                    >
+                      {a}
+                    </span>
+                  </label>
+                ))}
               </div>
-              <div>
-                <dt className="text-sm font-medium text-gray-600">Duration</dt>
-                <dd className="mt-1 text-sm text-gray-900">
-                  {formatDuration(meeting.duration)}
-                </dd>
+            </section>
+          )}
+
+          {/* Transcript */}
+          <section className="mt-9 max-w-[760px]">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <h2 className="font-display text-[20px] font-semibold text-ink">Full transcript</h2>
+              {segments.length > 0 && Object.keys(languages).length > 0 && (
+                <div className="flex items-center gap-2">
+                  {translating && (
+                    <span className="h-3.5 w-3.5 rounded-full border-2 border-line-hover border-t-accent animate-spin-mg" />
+                  )}
+                  <label className="font-mono text-[11px] uppercase tracking-wider text-muted2">
+                    Translate
+                  </label>
+                  <select
+                    value={transLang}
+                    disabled={translating}
+                    onChange={(e) => translate(e.target.value)}
+                    className="rounded-md border border-line-input bg-surface px-2.5 py-1.5 text-[13px] text-ink outline-none focus:border-line-hover disabled:opacity-50"
+                  >
+                    <option value="en">English (original)</option>
+                    {Object.entries(languages)
+                      .filter(([code]) => code !== 'en')
+                      .map(([code, name]) => (
+                        <option key={code} value={code}>
+                          {name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              )}
+            </div>
+            {transLang !== 'en' && !translating && (
+              <p className="mb-3 text-[12.5px] text-ink3">
+                Showing a machine translation of the English transcript. Speaker
+                labels and timings are unchanged.
+              </p>
+            )}
+            {shownSegments.length === 0 ? (
+              <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[14px] text-ink3">
+                No transcript available yet.
+              </p>
+            ) : (
+              <div className="space-y-4">
+                {shownSegments.map((seg) => (
+                  <div key={seg.id} className="border-b border-line2 pb-3">
+                    <div className="mb-1 flex items-center gap-2.5">
+                      <span className="text-[13.5px] font-semibold text-accent-ink">
+                        {seg.speaker || 'Speaker'}
+                      </span>
+                      <span className="font-mono text-[11.5px] text-muted3">
+                        {fmtClock(seg.start_time)}
+                      </span>
+                    </div>
+                    <p className="text-[14.5px] leading-relaxed text-ink-soft">{seg.text}</p>
+                  </div>
+                ))}
               </div>
-              <div>
-                <dt className="text-sm font-medium text-gray-600">Created</dt>
-                <dd className="mt-1 text-sm text-gray-900">
-                  {formatDate(meeting.created_at)}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-sm font-medium text-gray-600">Segments</dt>
-                <dd className="mt-1 text-sm text-gray-900">{transcript.length}</dd>
-              </div>
-            </dl>
-          </div>
+            )}
+          </section>
         </div>
+
+        {/* Q&A sidebar */}
+        <aside className="sticky top-0 hidden h-screen flex-col border-l border-line bg-panel2 p-5 lg:flex">
+          <div className="mb-3">
+            <div className="flex items-center gap-2 font-display text-[17px] font-semibold text-ink">
+              <span className="text-accent-ink">✦</span> Ask this meeting
+            </div>
+            <p className="mt-1 text-[13px] text-ink3">
+              Answers are grounded in this meeting&apos;s transcript.
+            </p>
+          </div>
+          <div className="min-h-0 flex-1">
+            <ChatPanel
+              resolve={resolve}
+              initialMessages={history}
+              placeholder="Ask about this meeting…"
+              suggestions={
+                history.length === 0
+                  ? ['Summarize the key decisions', 'List my action items', 'What deadlines were set?']
+                  : []
+              }
+            />
+          </div>
+        </aside>
       </div>
-    </div>
+    </AppShell>
   );
 }
