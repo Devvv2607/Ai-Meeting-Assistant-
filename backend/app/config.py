@@ -163,6 +163,8 @@ def validate_required_settings():
         logger.info(
             f"Database URL configured: {parts.scheme}://{parts.username}:***@{host}{port}{parts.path}"
         )
+        source = "DATABASE_URL env var" if os.getenv("DATABASE_URL") else "DB_* variables/defaults"
+        logger.info(f"Database config source: {source}")
     except Exception as e:
         logger.error(f"Error constructing database URL: {e}")
         raise
