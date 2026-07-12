@@ -16,8 +16,10 @@ RUN apt-get update && apt-get install -y \
 # Copy requirements
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install the CPU-only torch wheel first (the default PyPI wheel bundles CUDA
+# and adds ~2GB); requirements.txt then sees torch as already satisfied.
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu \
+    && pip install --no-cache-dir -r requirements.txt
 
 # Copy application
 COPY . .

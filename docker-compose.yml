@@ -1,23 +1,7 @@
-version: "3.8"
-
 services:
-  # PostgreSQL Database
-  postgres:
-    image: postgres:15-alpine
-    container_name: ai-meeting-postgres
-    environment:
-      POSTGRES_USER: ${DB_USER:-aiuser}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-aipassword}
-      POSTGRES_DB: ${DB_NAME:-ai_meeting}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-aiuser}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+  # NOTE: no PostgreSQL service — the database is Supabase Postgres.
+  # Set DB_* in .env to the Supabase SESSION POOLER (IPv4) host; the direct
+  # db.<ref>.supabase.co host is IPv6-only and unreachable from Docker.
 
   # Redis Cache & Broker
   redis:
@@ -41,12 +25,12 @@ services:
       dockerfile: Dockerfile
     container_name: ai-meeting-backend
     environment:
-      # Database - use postgres service name in Docker
-      DB_USER: ${DB_USER:-aiuser}
-      DB_PASSWORD: ${DB_PASSWORD:-aipassword}
-      DB_NAME: ${DB_NAME:-ai_meeting}
-      DB_HOST: postgres
-      DB_PORT: 5432
+      # Database — Supabase Postgres (values from .env; use the IPv4 pooler host)
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME:-postgres}
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT:-5432}
       # Redis - use redis service name in Docker
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
@@ -76,8 +60,6 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
@@ -94,12 +76,12 @@ services:
       dockerfile: Dockerfile.worker
     container_name: ai-meeting-celery
     environment:
-      # Database - use postgres service name in Docker
-      DB_USER: ${DB_USER:-aiuser}
-      DB_PASSWORD: ${DB_PASSWORD:-aipassword}
-      DB_NAME: ${DB_NAME:-ai_meeting}
-      DB_HOST: postgres
-      DB_PORT: 5432
+      # Database — Supabase Postgres (values from .env; use the IPv4 pooler host)
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME:-postgres}
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT:-5432}
       # Redis - use redis service name in Docker
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
@@ -121,8 +103,6 @@ services:
       - ./backend:/app
       - /tmp:/tmp
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     command: celery -A app.workers.celery_config worker --loglevel=info --concurrency=2
@@ -151,7 +131,6 @@ services:
       start_period: 40s
 
 volumes:
-  postgres_data:
   redis_data:
 
 networks:

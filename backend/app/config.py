@@ -6,14 +6,17 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Explicitly load .env file from root directory
+# Load .env from the repo root when present (local development only).
+# load_dotenv never overrides variables already set in the process
+# environment, so platform-injected vars (Railway, Docker) always win.
+# In production no .env exists and none is required.
 env_file_path = Path(__file__).parent.parent.parent / ".env"
 if env_file_path.exists():
     from dotenv import load_dotenv
     load_dotenv(env_file_path)
     logger.info(f"Loaded .env file from: {env_file_path}")
 else:
-    logger.warning(f".env file not found at: {env_file_path}")
+    logger.info(".env file not found — using process environment (expected in production)")
 
 # Configure ffmpeg (bundled via imageio-ffmpeg) before any pydub conversion runs.
 try:
@@ -40,6 +43,16 @@ class Settings(BaseSettings):
     
     @property
     def DATABASE_URL(self) -> str:
+        # A full DATABASE_URL in the environment (the Railway/Heroku
+        # convention) always wins over the DB_* parts and their local
+        # defaults. SQLAlchemy 2.x rejects the legacy postgres:// scheme,
+        # so normalize it.
+        env_url = os.getenv("DATABASE_URL")
+        if env_url:
+            if env_url.startswith("postgres://"):
+                env_url = "postgresql://" + env_url[len("postgres://"):]
+            return env_url
+
         from urllib.parse import quote
         # URL-encode the password to handle special characters like '@'
         encoded_password = quote(self.DB_PASSWORD, safe='')
@@ -113,16 +126,22 @@ settings = Settings()
 def validate_required_settings():
     """Validate that required environment variables are set"""
     required_vars = {
-        "DB_USER": settings.DB_USER,
-        "DB_PASSWORD": settings.DB_PASSWORD,
-        "DB_NAME": settings.DB_NAME,
-        "DB_HOST": settings.DB_HOST,
-        "DB_PORT": settings.DB_PORT,
         # Fail closed: the app's core features (transcription, summary, chat) are
         # useless without a Groq key, so refuse to boot rather than silently
         # serving fallback text on every request.
         "GROQ_API_KEY": settings.GROQ_API_KEY,
     }
+    # DB config comes either from a single DATABASE_URL (Railway/Heroku
+    # convention) or from the DB_* parts — only require the parts when no
+    # full URL is provided.
+    if not os.getenv("DATABASE_URL"):
+        required_vars.update({
+            "DB_USER": settings.DB_USER,
+            "DB_PASSWORD": settings.DB_PASSWORD,
+            "DB_NAME": settings.DB_NAME,
+            "DB_HOST": settings.DB_HOST,
+            "DB_PORT": settings.DB_PORT,
+        })
     
     missing_vars = []
     for var_name, var_value in required_vars.items():
@@ -135,10 +154,15 @@ def validate_required_settings():
         logger.error("Please set these variables in your .env file or environment")
         raise ValueError(error_msg)
     
-    # Validate database connection string
+    # Validate database connection string (log with the password masked)
     try:
-        db_url = settings.DATABASE_URL
-        logger.info(f"Database URL configured: postgresql://{settings.DB_USER}:***@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}")
+        from urllib.parse import urlsplit
+        parts = urlsplit(settings.DATABASE_URL)
+        host = parts.hostname or "?"
+        port = f":{parts.port}" if parts.port else ""
+        logger.info(
+            f"Database URL configured: {parts.scheme}://{parts.username}:***@{host}{port}{parts.path}"
+        )
     except Exception as e:
         logger.error(f"Error constructing database URL: {e}")
         raise
