@@ -6,6 +6,15 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
+def _masked_db_url() -> str:
+    """The URL the engine actually uses, with the password masked."""
+    from urllib.parse import urlsplit
+    parts = urlsplit(settings.DATABASE_URL)
+    host = parts.hostname or "?"
+    port = f":{parts.port}" if parts.port else ""
+    return f"{parts.scheme}://{parts.username}:***@{host}{port}{parts.path}"
+
 # Database connection
 # Use StaticPool for SQLite, QueuePool for PostgreSQL
 try:
@@ -30,7 +39,7 @@ try:
         logger.info(f"Using PostgreSQL database with QueuePool (pool_size={settings.SQLALCHEMY_POOL_SIZE}, max_overflow={settings.SQLALCHEMY_MAX_OVERFLOW})")
 except Exception as e:
     logger.error(f"Failed to create database engine: {e}")
-    logger.error(f"Database URL: postgresql://{settings.DB_USER}:***@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}")
+    logger.error(f"Database URL: {_masked_db_url()}")
     raise
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -57,5 +66,5 @@ def test_database_connection():
         return True
     except Exception as e:
         logger.error(f"Database connection test failed: {e}")
-        logger.error(f"Connection string: postgresql://{settings.DB_USER}:***@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}")
+        logger.error(f"Connection string: {_masked_db_url()}")
         return False
