@@ -41,3 +41,23 @@ class TokenResponse(BaseModel):
     refresh_token: Optional[str] = None
     token_type: str = "bearer"
     expires_in: int
+
+
+class TokenVerifyRequest(BaseModel):
+    """Body for POST /verify-token"""
+
+    token: str
+
+
+class OAuthExchangeRequest(BaseModel):
+    """Body for POST /google/exchange — the Supabase access token from the
+    OAuth redirect fragment."""
+
+    access_token: str
+
+
+class OAuthExchangeResponse(TokenResponse):
+    """Token plus the profile fields the frontend stores locally."""
+
+    email: EmailStr
+    full_name: Optional[str] = None

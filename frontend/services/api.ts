@@ -62,6 +62,18 @@ class APIClient {
     return this.client.post("/api/v1/auth/verify-token", { token });
   }
 
+  // Google sign-in: browser navigates to the backend, which 302s to
+  // Supabase's OAuth authorize endpoint; tokens come back on redirectTo.
+  googleStartUrl(redirectTo: string) {
+    return `${API_URL}/api/v1/auth/google/start?redirect_to=${encodeURIComponent(redirectTo)}`;
+  }
+
+  async googleExchange(accessToken: string) {
+    return this.client.post("/api/v1/auth/google/exchange", {
+      access_token: accessToken,
+    });
+  }
+
   // Meeting endpoints
   async uploadMeeting(
     title: string,

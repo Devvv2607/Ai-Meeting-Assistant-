@@ -90,12 +90,14 @@ export default function LoginPage() {
             <span className="h-px flex-1 bg-line" /> or <span className="h-px flex-1 bg-line" />
           </div>
 
-          {/* Google sign-in: not supported by backend yet — disabled gracefully */}
           <button
             type="button"
-            disabled
-            title="Coming soon"
-            className="flex w-full cursor-not-allowed items-center justify-center gap-2.5 rounded-md border border-line-input bg-surface px-5 py-3 text-[15px] font-semibold text-muted opacity-70"
+            onClick={() => {
+              window.location.href = api.googleStartUrl(
+                `${window.location.origin}/auth/callback`
+              );
+            }}
+            className="flex w-full items-center justify-center gap-2.5 rounded-md border border-line-input bg-surface px-5 py-3 text-[15px] font-semibold text-ink transition-colors hover:border-line-hover"
           >
             <span className="font-bold">G</span> Continue with Google
           </button>

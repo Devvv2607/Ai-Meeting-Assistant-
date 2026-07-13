@@ -4,7 +4,6 @@ from app.database import Base, engine, test_database_connection
 from app.routers import auth_routes, meeting_routes, transcript_routes, summary_routes, export_routes, chatbot_routes, live_routes, websocket_routes
 from app.config import settings, validate_required_settings
 import logging
-import os
 import time
 
 # Configure logging
@@ -44,38 +43,22 @@ app = FastAPI(
     debug=settings.DEBUG,
 )
 
-# Add CORS middleware
-allowed_origins = [
-    "http://localhost:3000",  # Local development (original port)
-    "http://localhost:3001",  # Local development (alternate port)
-    "http://localhost:3002",  # Local development (alternate port)
-    "http://127.0.0.1:3000",  # Alternative localhost
-    "http://127.0.0.1:3001",  # Alternative localhost (alternate port)
-    "http://127.0.0.1:3002",  # Alternative localhost (alternate port)
-    "http://frontend:3000",   # Docker frontend service
-]
+# Add CORS middleware — origin policy lives in app.utils.origins (shared with
+# the OAuth redirect validation in auth_routes).
+from app.utils.origins import allowed_origins, VERCEL_TEAM_ORIGIN_REGEX
 
-# Production frontend origins: comma-separated ALLOWED_ORIGINS env var
-# (e.g. a custom domain), plus every Vercel deployment of this project
-# (production, preview, and branch aliases) via the regex below.
-allowed_origins += [
-    origin.strip()
-    for origin in os.getenv("ALLOWED_ORIGINS", "").split(",")
-    if origin.strip()
-]
-vercel_origin_regex = r"^https://ai-meeting-assistant[a-z0-9-]*\.vercel\.app$"
-
-# Add environment-specific origins
+cors_origins = ["*"] if settings.DEBUG else allowed_origins()
 if settings.DEBUG:
-    allowed_origins.append("*")  # Allow all in debug mode
-    logger.info(f"CORS: Allowing all origins + specific list: {allowed_origins}")
+    logger.info("CORS: DEBUG mode — allowing all origins")
 else:
-    logger.info(f"CORS: Allowing origins: {allowed_origins} + regex {vercel_origin_regex}")
+    logger.info(
+        f"CORS: Allowing origins: {cors_origins} + regex {VERCEL_TEAM_ORIGIN_REGEX}"
+    )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins if not settings.DEBUG else ["*"],
-    allow_origin_regex=vercel_origin_regex,
+    allow_origins=cors_origins,
+    allow_origin_regex=VERCEL_TEAM_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
