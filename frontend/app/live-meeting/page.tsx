@@ -48,6 +48,11 @@ export default function LiveMeetingPage() {
   // WebM header.
   const SEGMENT_MS = 4000;
 
+  // Authenticated route without AppShell — apply the same login guard.
+  useEffect(() => {
+    if (!localStorage.getItem('access_token')) router.replace('/login');
+  }, [router]);
+
   // Cleanup on unmount
   useEffect(() => () => cleanup(), []);
 

@@ -2,6 +2,7 @@
 
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import ProfileMenu, { ProfileUser } from './ProfileMenu';
 
 interface NavItem {
   key: string;
@@ -16,17 +17,10 @@ const NAV: NavItem[] = [
   { key: 'library', label: 'Library', icon: '▤', href: '/dashboard' },
 ];
 
-function initialsFrom(name: string): string {
-  const parts = name.trim().split(/\s+/);
-  if (parts.length === 0) return 'M';
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
-
 export default function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
-  const [user, setUser] = useState<{ name: string; role: string }>({
+  const [user, setUser] = useState<ProfileUser>({
     name: 'Your account',
     role: 'Member',
   });
@@ -92,16 +86,8 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* User card */}
-      <div className="mt-auto flex items-center gap-2.5 border-t border-line pt-4">
-        <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-accent text-[13px] font-bold text-lime">
-          {initialsFrom(user.name)}
-        </span>
-        <div className="min-w-0">
-          <div className="truncate text-[13.5px] font-semibold text-ink">{user.name}</div>
-          <div className="truncate text-[12px] text-ink3">{user.role}</div>
-        </div>
-      </div>
+      {/* User card + dropdown */}
+      <ProfileMenu user={user} />
     </aside>
   );
 }
