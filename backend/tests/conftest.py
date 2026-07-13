@@ -11,6 +11,10 @@ import logging
 # Add backend app to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# Keep the suite on the local-hash auth path — otherwise every register/login
+# fixture would create real users in Supabase Auth and hit its rate limits.
+os.environ.setdefault("SUPABASE_AUTH_DISABLED", "1")
+
 logger = logging.getLogger(__name__)
 
 

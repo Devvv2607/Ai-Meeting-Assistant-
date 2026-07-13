@@ -69,6 +69,11 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
+    # Supabase Auth (GoTrue) — when both are set, user credentials are
+    # stored/verified by Supabase instead of the local users table.
+    SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
+    SUPABASE_ANON_KEY: str = os.getenv("SUPABASE_ANON_KEY", "")
+
     # Redis
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
@@ -165,6 +170,13 @@ def validate_required_settings():
         )
         source = "DATABASE_URL env var" if os.getenv("DATABASE_URL") else "DB_* variables/defaults"
         logger.info(f"Database config source: {source}")
+
+        auth_provider = (
+            f"Supabase Auth ({settings.SUPABASE_URL})"
+            if settings.SUPABASE_URL and settings.SUPABASE_ANON_KEY
+            else "local password hashes (SUPABASE_URL/SUPABASE_ANON_KEY not set)"
+        )
+        logger.info(f"Auth credential provider: {auth_provider}")
     except Exception as e:
         logger.error(f"Error constructing database URL: {e}")
         raise
